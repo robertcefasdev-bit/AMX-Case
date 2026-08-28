@@ -1,0 +1,3 @@
+Coloque aqui a imagem PNG da logo da loja e renomeie o arquivo para logo.png.
+
+Arquivo esperado pelo sistema: public/logo.png
