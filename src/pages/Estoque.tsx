@@ -14,6 +14,7 @@ function stockStatus(p: Product) {
 }
 
 function rotation(p: Product) {
+  if (p.excludeFromRotation) return ["Não aplicável", "badge-gray"] as const;
   if (p.totalSold === 0 || p.daysSinceLastSale > 90) return ["Parado", "badge-red"] as const;
   if (p.daysSinceLastSale > 60) return ["Baixa", "badge-yellow"] as const;
   if (p.daysSinceLastSale > 30) return ["Normal", "badge-blue"] as const;
@@ -21,13 +22,15 @@ function rotation(p: Product) {
 }
 
 export default function Estoque({ role, onNewProduct }: Props) {
-  const { products, updateProduct, addStock } = useProducts();
+  const { products, updateProduct, deleteProduct, addStock } = useProducts();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("Todos");
   const [filterCat, setFilterCat] = useState("Todas");
   const [selected, setSelected] = useState<Product | null>(null);
   const [entryProduct, setEntryProduct] = useState<Product | null>(null);
   const [entryQty, setEntryQty] = useState("");
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", category: "", brand: "", compatibility: "", cost: "", price: "", minStock: "", idealStock: "", supplier: "", excludeFromRotation: false });
 
   const filtered = useMemo(() => products.filter((p) => {
     if (p.status !== "Ativo") return false;
@@ -54,13 +57,38 @@ export default function Estoque({ role, onNewProduct }: Props) {
     setEntryProduct(null);
   }
 
-  function editPrice(p: Product) {
+  function openEdit(p: Product) {
     if (role !== "admin") return;
-    const raw = window.prompt("Novo preço de venda:", String(p.price));
-    if (raw === null) return;
-    const price = Number(raw.replace(",", "."));
-    if (!Number.isFinite(price) || price < 0) return;
-    updateProduct(p.id, { price });
+    setEditForm({
+      name: p.name, category: p.category, brand: p.brand, compatibility: p.compatibility,
+      cost: String(p.cost), price: String(p.price), minStock: String(p.minStock), idealStock: String(p.idealStock),
+      supplier: p.supplier || "", excludeFromRotation: !!p.excludeFromRotation,
+    });
+    setEditProduct(p);
+  }
+
+  function saveEdit() {
+    if (!editProduct) return;
+    const cost = Number(editForm.cost.replace(",", "."));
+    const price = Number(editForm.price.replace(",", "."));
+    const minStock = Number(editForm.minStock);
+    const idealStock = Number(editForm.idealStock);
+    if (!editForm.name.trim()) { alert("Informe o nome do produto."); return; }
+    if (!Number.isFinite(cost) || cost < 0 || !Number.isFinite(price) || price < 0) { alert("Custo e preço devem ser números válidos."); return; }
+    if (!Number.isInteger(minStock) || !Number.isInteger(idealStock) || minStock < 0 || idealStock < minStock) { alert("Verifique o estoque mínimo e ideal (ideal não pode ser menor que o mínimo)."); return; }
+    updateProduct(editProduct.id, {
+      name: editForm.name.trim(), category: editForm.category as Product["category"], brand: editForm.brand.trim(),
+      compatibility: editForm.compatibility.trim(), cost, price, minStock, idealStock,
+      supplier: editForm.supplier.trim(), excludeFromRotation: editForm.excludeFromRotation,
+    });
+    setEditProduct(null);
+  }
+
+  function handleDelete(p: Product) {
+    if (role !== "admin") return;
+    if (!window.confirm(`Remover "${p.name}" definitivamente? Esta ação não pode ser desfeita.`)) return;
+    const result = deleteProduct(p.id);
+    if (!result.ok) alert(result.message);
   }
 
   return (
@@ -103,9 +131,13 @@ export default function Estoque({ role, onNewProduct }: Props) {
                 <td><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: p.stock === 0 ? "#DC2626" : p.stock <= p.minStock ? "#CA8A04" : "#0F172A" }}>{p.stock}</span></td>
                 <td>{p.minStock}</td><td>{p.idealStock}</td><td>{fmt(p.cost)}</td><td style={{ color: "#2563EB", fontWeight: 600 }}>{fmt(p.price)}</td>
                 <td><span className={`badge ${sc}`}>{ss}</span></td><td><span className={`badge ${rc}`}>{rs}</span></td>
-                <td><div style={{ display: "flex", gap: "4px" }}>
+                <td><div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
                   <button className="btn btn-ghost btn-sm" title="Detalhes" onClick={() => setSelected(p)}>Ver</button>
-                  {role === "admin" && <><button className="btn btn-ghost btn-sm" title="Alterar preço" onClick={() => editPrice(p)}>Editar</button><button className="btn btn-ghost btn-sm" title="Registrar entrada" onClick={() => openEntry(p)}>+ Estoque</button></>}
+                  {role === "admin" && <>
+                    <button className="btn btn-ghost btn-sm" title="Editar produto" onClick={() => openEdit(p)}>Editar</button>
+                    <button className="btn btn-ghost btn-sm" title="Registrar entrada" onClick={() => openEntry(p)}>+ Estoque</button>
+                    <button className="btn btn-ghost btn-sm" title="Remover produto" style={{ color: "#DC2626" }} onClick={() => handleDelete(p)}>Remover</button>
+                  </>}
                 </div></td>
               </tr>;
             })}
@@ -124,6 +156,42 @@ export default function Estoque({ role, onNewProduct }: Props) {
         <h2 style={{ marginTop: 0 }}>Registrar entrada</h2><p style={{ color: "#64748B", fontSize: "13px" }}>{entryProduct.name}</p>
         <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "6px" }}>Quantidade</label><input className="input" type="number" min="1" step="1" autoFocus value={entryQty} onChange={e => setEntryQty(e.target.value)} placeholder="Ex.: 10" />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "18px" }}><button className="btn btn-ghost" onClick={() => setEntryProduct(null)}>Cancelar</button><button className="btn btn-primary" onClick={confirmEntry}>Confirmar entrada</button></div>
+      </div></div>}
+
+      {editProduct && <div className="modal-overlay" onClick={() => setEditProduct(null)}><div className="modal" onClick={e => e.stopPropagation()} style={{ padding: "28px", maxWidth: "520px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "18px" }}>
+          <div><h2 style={{ margin: 0, fontSize: "18px" }}>Editar produto</h2><div style={{ fontSize: "12px", color: "#64748B", marginTop: "3px" }}>{editProduct.sku}</div></div>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditProduct(null)}>✕</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "13px" }}>
+          <label className="field-label">Nome<input className="input" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "13px" }}>
+            <label className="field-label">Categoria
+              <select className="input select" value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))}>
+                {categories.filter(c => c !== "Todas").map(c => <option key={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className="field-label">Marca<input className="input" value={editForm.brand} onChange={e => setEditForm(f => ({ ...f, brand: e.target.value }))} /></label>
+          </div>
+          <label className="field-label">Compatibilidade<input className="input" value={editForm.compatibility} onChange={e => setEditForm(f => ({ ...f, compatibility: e.target.value }))} /></label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "13px" }}>
+            <label className="field-label">Custo (R$)<input className="input" type="number" step="0.01" min="0" value={editForm.cost} onChange={e => setEditForm(f => ({ ...f, cost: e.target.value }))} /></label>
+            <label className="field-label">Preço de venda (R$)<input className="input" type="number" step="0.01" min="0" value={editForm.price} onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))} /></label>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "13px" }}>
+            <label className="field-label">Estoque mínimo<input className="input" type="number" min="0" value={editForm.minStock} onChange={e => setEditForm(f => ({ ...f, minStock: e.target.value }))} /></label>
+            <label className="field-label">Estoque ideal<input className="input" type="number" min="0" value={editForm.idealStock} onChange={e => setEditForm(f => ({ ...f, idealStock: e.target.value }))} /></label>
+          </div>
+          <label className="field-label">Fornecedor<input className="input" value={editForm.supplier} onChange={e => setEditForm(f => ({ ...f, supplier: e.target.value }))} /></label>
+          <label className="checkbox-field">
+            <input type="checkbox" checked={editForm.excludeFromRotation} onChange={e => setEditForm(f => ({ ...f, excludeFromRotation: e.target.checked }))} />
+            <span><strong>Não considerar em "Pouca Rotatividade"</strong></span>
+          </label>
+          <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+            <button className="btn btn-primary" onClick={saveEdit}>Salvar alterações</button>
+            <button className="btn btn-secondary" onClick={() => setEditProduct(null)}>Cancelar</button>
+          </div>
+        </div>
       </div></div>}
     </div>
   );

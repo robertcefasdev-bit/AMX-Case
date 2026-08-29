@@ -52,9 +52,11 @@ export function downloadCSV(filename:string, rows:Record<string,unknown>[]){ if(
 interface Store {
  products:Product[]; sales:Sale[]; users:User[]; movements:StockMovement[];
  addProduct:(input:Omit<Product,"id"|"totalBought"|"totalSold"|"daysSinceLastSale"|"status">)=>Product;
- updateProduct:(id:string,patch:Partial<Product>)=>void; deactivateProduct:(id:string)=>void; addStock:(id:string,quantity:number,entryDate?:string,userId?:string)=>void;
+ updateProduct:(id:string,patch:Partial<Product>)=>void; deactivateProduct:(id:string)=>void; deleteProduct:(id:string)=>{ok:boolean; message:string}; addStock:(id:string,quantity:number,entryDate?:string,userId?:string)=>void;
  registerSale:(args:{sellerId:string; items:{productId:string; quantity:number}[]; paymentMethod:PaymentMethod; discountPercent:number; overridePassword?:string})=>{ok:boolean; message:string; sales:Sale[]};
- cancelSale:(saleId:string,userId:string)=>void; addUser:(input:Omit<User,"id"|"createdAt">)=>User; updateUser:(id:string,patch:Partial<User>)=>void;
+ cancelSale:(saleId:string,userId:string)=>void; deleteSale:(saleId:string)=>{ok:boolean; message:string};
+ updateSale:(saleId:string,patch:{quantity?:number; paymentMethod?:PaymentMethod; discountPercent?:number})=>{ok:boolean; message:string};
+ addUser:(input:Omit<User,"id"|"createdAt">)=>User; updateUser:(id:string,patch:Partial<User>)=>void; deleteUser:(id:string)=>{ok:boolean; message:string};
  resetAll:()=>void;
  discountOverridePassword:string; setDiscountOverridePassword:(password:string)=>void; verifyDiscountOverridePassword:(password:string)=>boolean;
 }
@@ -71,6 +73,13 @@ export function DataProvider({children}:{children:React.ReactNode}){
   addProduct(input){const p:Product={...input,id:id("p"),totalBought:Number(input.stock||0),totalSold:0,daysSinceLastSale:0,status:"Ativo"}; setProducts(x=>[...x,p]); if(p.stock>0){const n=nowParts(); setMovements(x=>[{id:id("m"),date:p.entryDate,time:n.time,weekday:n.weekday,type:"Entrada",productId:p.id,productName:p.name,quantity:p.stock,value:p.cost*p.stock,userId:"system",userName:"Sistema",notes:"Estoque inicial"},...x]);} return p;},
   updateProduct(id,patch){setProducts(x=>x.map(p=>p.id===id?{...p,...patch}:p));},
   deactivateProduct(id){setProducts(x=>x.map(p=>p.id===id?{...p,status:"Inativo"}:p));},
+  deleteProduct(pid){
+    const hasSales=sales.some(s=>s.productId===pid);
+    if(hasSales)return{ok:false,message:"Este produto possui vendas registradas e não pode ser excluído. Você pode inativá-lo."};
+    setProducts(x=>x.filter(p=>p.id!==pid));
+    setMovements(x=>x.filter(m=>m.productId!==pid));
+    return{ok:true,message:"Produto removido."};
+  },
   addStock(pid,qty,entryDate){if(!Number.isFinite(qty)||qty<=0)return; const p=products.find(x=>x.id===pid); if(!p)return; const n=nowParts(); setProducts(x=>x.map(q=>q.id===pid?{...q,stock:q.stock+qty,totalBought:q.totalBought+qty,lastEntry:entryDate||n.iso,entryDate:q.entryDate||entryDate||n.iso}:q)); setMovements(x=>[{id:id("m"),date:entryDate||n.iso,time:n.time,weekday:n.weekday,type:"Entrada",productId:pid,productName:p.name,quantity:qty,value:p.cost*qty,userId:"system",userName:"Administrador"},...x]);},
   registerSale({sellerId,items,paymentMethod,discountPercent,overridePassword}){
     const seller=users.find(u=>u.id===sellerId);
@@ -87,10 +96,47 @@ export function DataProvider({children}:{children:React.ReactNode}){
     const created:Sale[]=items.map(i=>{const p=products.find(x=>x.id===i.productId)!; const original=p.price*i.quantity; const itemDiscount=subtotal?totalDiscount*(original/subtotal):0; const final=original-itemDiscount; const cost=p.cost*i.quantity; return{id:id("v"),date:n.date,time:n.time,weekday:n.weekday,sellerId,sellerName:seller.name,productId:p.id,productName:p.name,productSku:p.sku,category:p.category,quantity:i.quantity,originalPrice:p.price,discount:Number(itemDiscount.toFixed(2)),finalPrice:Number(final.toFixed(2)),cost,profit:Number((final-cost).toFixed(2)),paymentMethod,status:"Concluída"};});
     setSales(x=>[...created,...x]); setProducts(x=>x.map(p=>{const sold=created.filter(s=>s.productId===p.id).reduce((a,s)=>a+s.quantity,0); return sold?{...p,stock:p.stock-sold,totalSold:p.totalSold+sold,lastSale:n.iso,daysSinceLastSale:0}:{...p,daysSinceLastSale:p.lastSale?daysSince(p.lastSale):daysSince(p.entryDate)};})); setMovements(x=>[...created.map(s=>({id:id("m"),date:n.iso,time:n.time,weekday:n.weekday,type:"Saída" as const,productId:s.productId,productName:s.productName,quantity:s.quantity,value:s.finalPrice,userId:sellerId,userName:seller.name,notes:`Venda ${s.id}`})),...x]); return{ok:true,message:"Venda registrada com sucesso.",sales:created};},
   cancelSale(saleId,userId){const s=sales.find(x=>x.id===saleId&&x.status==="Concluída"); if(!s)return; const n=nowParts(); setSales(x=>x.map(q=>q.id===saleId?{...q,status:"Cancelada"}:q)); setProducts(x=>x.map(p=>p.id===s.productId?{...p,stock:p.stock+s.quantity,totalSold:Math.max(0,p.totalSold-s.quantity)}:p)); setMovements(x=>[{id:id("m"),date:n.iso,time:n.time,weekday:n.weekday,type:"Estorno",productId:s.productId,productName:s.productName,quantity:s.quantity,value:s.finalPrice,userId,userName:"Administrador",notes:`Estorno da venda ${saleId}`},...x]);},
+  deleteSale(saleId){
+    const s=sales.find(x=>x.id===saleId);
+    if(!s)return{ok:false,message:"Venda não encontrada."};
+    if(s.status==="Concluída"){
+      setProducts(x=>x.map(p=>p.id===s.productId?{...p,stock:p.stock+s.quantity,totalSold:Math.max(0,p.totalSold-s.quantity)}:p));
+    }
+    setSales(x=>x.filter(q=>q.id!==saleId));
+    setMovements(x=>x.filter(m=>m.notes!==`Venda ${saleId}`));
+    return{ok:true,message:"Venda removida."};
+  },
+  updateSale(saleId,patch){
+    const s=sales.find(x=>x.id===saleId);
+    if(!s)return{ok:false,message:"Venda não encontrada."};
+    if(s.status!=="Concluída")return{ok:false,message:"Apenas vendas concluídas podem ser editadas."};
+    const p=products.find(x=>x.id===s.productId);
+    if(!p)return{ok:false,message:"Produto da venda não encontrado."};
+    const newQty=patch.quantity!==undefined?patch.quantity:s.quantity;
+    if(!Number.isInteger(newQty)||newQty<=0)return{ok:false,message:"Quantidade inválida."};
+    const delta=newQty-s.quantity;
+    if(delta>0 && delta>p.stock)return{ok:false,message:`Estoque insuficiente. Disponível: ${p.stock}.`};
+    const discountPercent=patch.discountPercent!==undefined?Math.max(0,Math.min(100,patch.discountPercent)):(s.originalPrice*s.quantity?s.discount/(s.originalPrice*s.quantity)*100:0);
+    const subtotal=s.originalPrice*newQty;
+    const discount=Number((subtotal*(discountPercent/100)).toFixed(2));
+    const finalPrice=Number((subtotal-discount).toFixed(2));
+    const cost=p.cost*newQty;
+    const profit=Number((finalPrice-cost).toFixed(2));
+    const paymentMethod=patch.paymentMethod||s.paymentMethod;
+    setProducts(x=>x.map(q=>q.id===p.id?{...q,stock:q.stock-delta,totalSold:Math.max(0,q.totalSold+delta)}:q));
+    setSales(x=>x.map(q=>q.id===saleId?{...q,quantity:newQty,discount,finalPrice,cost,profit,paymentMethod}:q));
+    return{ok:true,message:"Venda atualizada."};
+  },
   addUser(input){const u:User={...input,id:id("u"),createdAt:nowParts().iso}; setUsers(x=>[...x,u]); return u;}, updateUser(uid,patch){setUsers(x=>x.map(u=>u.id===uid?{...u,...patch}:u));},
+  deleteUser(uid){
+    const hasSales=sales.some(s=>s.sellerId===uid);
+    if(hasSales)return{ok:false,message:"Este vendedor possui vendas registradas e não pode ser excluído. Você pode inativá-lo."};
+    setUsers(x=>x.filter(u=>u.id!==uid));
+    return{ok:true,message:"Vendedor removido."};
+  },
   resetAll(){setProducts(migrateDates(seedProducts.map(p=>({...p}))));setSales(migrateDates(seedSales.map(s=>({...s}))));setUsers(migrateDates(seedUsers.map(u=>({...u}))));setMovements(migrateDates(seedMovements.map(m=>({...m}))));}
  }),[products,sales,users,movements,discountOverridePassword]);
  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 export function useStore(){const c=useContext(Ctx);if(!c)throw new Error("useStore deve ser usado dentro de DataProvider");return c;}
-export function useProducts(){const s=useStore();return {products:s.products,addProduct:s.addProduct,updateProduct:s.updateProduct,deactivateProduct:s.deactivateProduct,addStock:s.addStock,resetProducts:()=>s.resetAll()};}
+export function useProducts(){const s=useStore();return {products:s.products,addProduct:s.addProduct,updateProduct:s.updateProduct,deactivateProduct:s.deactivateProduct,deleteProduct:s.deleteProduct,addStock:s.addStock,resetProducts:()=>s.resetAll()};}

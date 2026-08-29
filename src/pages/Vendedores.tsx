@@ -8,6 +8,7 @@ export default function Vendedores() {
     sales,
     addUser,
     updateUser,
+    deleteUser,
     discountOverridePassword,
     setDiscountOverridePassword,
   } = useStore();
@@ -92,6 +93,13 @@ export default function Vendedores() {
 
   function toggleStatus(seller: (typeof users)[number]) {
     updateUser(seller.id, { status: seller.status === "Ativo" ? "Inativo" : "Ativo" });
+  }
+
+  function handleDelete(seller: (typeof users)[number]) {
+    if (!window.confirm(`Remover "${seller.name}" definitivamente? Esta ação não pode ser desfeita.`)) return;
+    const result = deleteUser(seller.id);
+    if (!result.ok) { alert(result.message); return; }
+    if (selected?.id === seller.id) setSelected(null);
   }
 
   return (
@@ -185,6 +193,7 @@ export default function Vendedores() {
                     <button className="btn btn-ghost btn-sm" onClick={() => setSelected(seller)} title="Detalhes">Ver</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => openEdit(seller)} title="Editar">Editar</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => toggleStatus(seller)} title="Ativar/Inativar">{seller.status === "Ativo" ? "Inativar" : "Ativar"}</button>
+                    <button className="btn btn-ghost btn-sm" style={{ color: "#DC2626" }} onClick={() => handleDelete(seller)} title="Remover vendedor">Remover</button>
                   </div></td>
                 </tr>
               );
@@ -212,6 +221,7 @@ export default function Vendedores() {
             <div style={{ display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" }}>
               <button className="btn btn-primary" onClick={() => downloadCSV(`vendas-${selected.username}.csv`, sales.filter((s) => s.sellerId === selected.id).map((s) => ({ Data: s.date, Horario: s.time, Vendedor: s.sellerName, Produto: s.productName, Quantidade: s.quantity, ValorFinal: s.finalPrice, Desconto: s.discount, Lucro: s.profit, Pagamento: s.paymentMethod, Status: s.status })))}>Baixar vendas</button>
               <button className="btn btn-secondary" onClick={() => { setSelected(null); openEdit(selected); }}>Editar funcionário</button>
+              <button className="btn btn-danger" onClick={() => handleDelete(selected)}>Remover funcionário</button>
             </div>
           </div>
         </div>

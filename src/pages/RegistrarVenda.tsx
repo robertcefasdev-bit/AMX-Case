@@ -97,24 +97,20 @@ export default function RegistrarVenda({ userId, role }: Props) {
           {/* Search */}
           <div className="card" style={{ padding: "16px 20px" }}>
             <label style={{ fontSize: "12.5px", fontWeight: 600, display: "block", marginBottom: "8px", color: "#374151" }}>Buscar Produto</label>
-            <div style={{ position: "relative" }}>
+            <div className="product-search" style={{ position: "relative" }}>
               <input className="input" placeholder="Digite o nome, SKU ou modelo..." value={search} onChange={e => { setSearch(e.target.value); setErrorMsg(""); }} autoFocus />
               {results.length > 0 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "white", border: "1px solid #E2E8F0", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 10, marginTop: "4px" }}>
+                <div className="product-search-results">
                   {results.map(p => (
-                    <button key={p.id} onClick={() => addToCart(p)}
-                      style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", border: "none", background: "none", cursor: "pointer", textAlign: "left", borderBottom: "1px solid #F1F5F9" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "#F8FAFC")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "none")}
-                    >
-                      <div>
-                        <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0F172A" }}>{p.name}</div>
-                        <div style={{ fontSize: "11.5px", color: "#64748B" }}>{p.sku} · {p.compatibility}</div>
-                        <div style={{ fontSize: "11.5px", color: p.stock === 0 ? "#DC2626" : p.stock <= p.minStock ? "#CA8A04" : "#16A34A", fontWeight: 600, marginTop: "1px" }}>
+                    <button key={p.id} className="product-search-item" onClick={() => addToCart(p)}>
+                      <div className="product-search-item-info">
+                        <div className="product-search-item-name">{p.name}</div>
+                        <div className="product-search-item-meta">{p.sku} · {p.compatibility}</div>
+                        <div className="product-search-item-stock" style={{ color: p.stock === 0 ? "#DC2626" : p.stock <= p.minStock ? "#CA8A04" : "#16A34A" }}>
                           {p.stock === 0 ? "Sem estoque" : `${p.stock} disponíveis`}
                         </div>
                       </div>
-                      <div style={{ fontSize: "15px", fontWeight: 700, color: "#2563EB", marginLeft: "16px" }}>{fmt(p.price)}</div>
+                      <div className="product-search-item-price">{fmt(p.price)}</div>
                     </button>
                   ))}
                 </div>

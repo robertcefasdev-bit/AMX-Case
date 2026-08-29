@@ -9,7 +9,8 @@ export default function CadastroProduto({ onBack }: Props) {
   const [form, setForm] = useState({
     name: "", sku: "", category: "Capa", brand: "", compatibility: "",
     description: "", cost: "", price: "", stockInit: "", minStock: "", idealStock: "",
-    supplier: "", entryDate: new Date().toISOString().split("T")[0]
+    supplier: "", entryDate: new Date().toISOString().split("T")[0],
+    excludeFromRotation: false,
   });
   const [saved, setSaved] = useState(false);
 
@@ -47,6 +48,7 @@ export default function CadastroProduto({ onBack }: Props) {
       supplier: form.supplier.trim(),
       entryDate: form.entryDate,
       lastEntry: form.stockInit ? form.entryDate : undefined,
+      excludeFromRotation: form.excludeFromRotation,
     });
 
     setSaved(true);
@@ -154,6 +156,19 @@ export default function CadastroProduto({ onBack }: Props) {
                 <input className="input" type="number" min="0" value={form.idealStock} onChange={e => set("idealStock", e.target.value)} placeholder="0" />
               </div>
             </div>
+            <label className="checkbox-field" style={{ marginTop: "16px" }}>
+              <input
+                type="checkbox"
+                checked={form.excludeFromRotation}
+                onChange={e => setForm(f => ({ ...f, excludeFromRotation: e.target.checked }))}
+              />
+              <span>
+                <strong>Não considerar em "Pouca Rotatividade"</strong>
+                <div style={{ fontSize: "12px", color: "#64748B", fontWeight: 400, marginTop: "2px" }}>
+                  Use para produtos que naturalmente vendem devagar (ex.: itens de reposição, encomenda ou sazonais), para não aparecerem nos alertas de baixa rotatividade.
+                </div>
+              </span>
+            </label>
           </div>
 
           {/* Fornecedor */}

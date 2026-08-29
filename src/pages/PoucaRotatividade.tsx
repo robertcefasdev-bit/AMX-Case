@@ -17,6 +17,7 @@ export default function PoucaRotatividade() {
 
   const list = products
     .filter(p => p.status === "Ativo")
+    .filter(p => !p.excludeFromRotation)
     .filter(p => {
       if (filter === "+30 dias") return p.daysSinceLastSale > 30;
       if (filter === "+60 dias") return p.daysSinceLastSale > 60;

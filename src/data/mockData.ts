@@ -34,6 +34,8 @@ export interface Product {
   totalSold: number;
   daysSinceLastSale: number;
   status: "Ativo" | "Inativo";
+  /** Quando true, o produto não entra nas listas/alertas de baixa rotatividade. */
+  excludeFromRotation?: boolean;
 }
 
 export interface Sale {

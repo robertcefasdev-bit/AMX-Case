@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../data/store";
+import { useTheme } from "../context/ThemeContext";
 
 type Page =
   | "dashboard" | "vendedor-dashboard"
@@ -52,8 +53,24 @@ function Icon({ path }: { path: string }) {
   );
 }
 
+function ThemeIcon({ theme }: { theme: "light" | "dark" }) {
+  if (theme === "dark") {
+    return (
+      <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="5" /><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+    </svg>
+  );
+}
+
 export default function Layout({ page, userId, role, onNavigate, onLogout, children }: Props) {
   const { users } = useStore();
+  const { theme, toggleTheme } = useTheme();
   const user = users.find(u => u.id === userId);
   const menu = role === "admin" ? adminMenu : vendedorMenu;
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -92,6 +109,9 @@ export default function Layout({ page, userId, role, onNavigate, onLogout, child
             <div className="mobile-brand-subtitle">Gestão</div>
           </div>
         </div>
+        <button className="mobile-icon-btn" onClick={toggleTheme} aria-label="Alternar tema">
+          <ThemeIcon theme={theme} />
+        </button>
         <div className="mobile-user-avatar">{user?.name?.charAt(0)}</div>
       </header>
 
@@ -145,6 +165,10 @@ export default function Layout({ page, userId, role, onNavigate, onLogout, child
               <div style={{ fontSize: "11px", color: "#475569", textTransform: "capitalize" }}>{role}</div>
             </div>
           </div>
+          <button onClick={toggleTheme} className="sidebar-item" style={{ width: "100%", textAlign: "left" }}>
+            <ThemeIcon theme={theme} />
+            {theme === "dark" ? "Tema claro" : "Tema escuro"}
+          </button>
           <button onClick={onLogout} className="sidebar-item" style={{ width: "100%", textAlign: "left", color: "#EF4444" }}>
             <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
             Sair
