@@ -362,16 +362,27 @@ tr:hover td { background: #F8FAFC; }
     left: 0;
     width: min(86vw, 300px);
     min-width: 0;
-    height: 100dvh;
+    /* A altura vem de top:0 + bottom:0 (a área realmente visível). Antes era
+       100dvh, que no celular pode ser maior que a tela visível e empurrava o
+       rodapé do menu (Tema/Sair) para fora. */
+    height: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: env(safe-area-inset-bottom);
     transform: translateX(-105%);
     transition: transform .22s ease;
     box-shadow: 10px 0 30px rgba(0,0,0,.2);
   }
+  /* O menu inteiro rola como uma coluna só: se não couber na tela, dá para
+     rolar até o final e alcançar o Sair. */
+  .sidebar > * { flex-shrink: 0; }
+  .sidebar nav { flex: 0 0 auto !important; overflow: visible !important; }
+  .sidebar > div:last-child { margin-top: auto; }
   .sidebar.mobile-open { transform: translateX(0); }
   .mobile-menu-backdrop { display: block; position: fixed; inset: 0; z-index: 75; border: 0; background: rgba(2,6,23,.55); }
   .mobile-sidebar-close { display: block; margin-left: auto; border: 0; background: transparent; color: #94A3B8; font-size: 28px; line-height: 1; padding: 0 4px; }
   .sidebar-brand-row { display: flex; align-items: center; justify-content: space-between; }
-  .sidebar nav { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
   .app-main {
     width: 100% !important;
