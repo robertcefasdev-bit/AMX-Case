@@ -434,22 +434,21 @@ tr:hover td { background: #F8FAFC; }
 /* LOGO DA EMPRESA — coloque a logo da loja em public/logo.png */
 .login-logo {
   display: block;
-  width: 96px;
-  height: 96px;
-  object-fit: contain;
-  border-radius: 12px;
+  width: 200px;
+  max-width: 70%;
+  height: auto;
   margin: 0 auto 16px;
 }
 .mobile-brand-logo {
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   object-fit: contain;
   border-radius: 8px;
   flex-shrink: 0;
 }
 .sidebar-brand-logo {
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 42px;
   object-fit: contain;
   border-radius: 8px;
   flex-shrink: 0;

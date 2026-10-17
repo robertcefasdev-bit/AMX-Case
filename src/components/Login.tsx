@@ -71,6 +71,10 @@ export default function Login({ onLogin }: Props) {
           </form>
 
         </div>
+
+        <p style={{ textAlign: "center", color: "#64748B", fontSize: "12px", margin: "20px 0 0" }}>
+          Desenvolvido por Robert Cefas
+        </p>
       </div>
     </div>
   );
