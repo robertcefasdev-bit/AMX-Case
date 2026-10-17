@@ -119,7 +119,7 @@ export default function Estoque({ role, onNewProduct }: Props) {
 
       <div className="card table-wrap">
         <table>
-          <thead><tr><th>Código</th><th>Produto</th><th>Categoria</th><th>Compatibilidade</th><th>Atual</th><th>Mín.</th><th>Ideal</th><th>Custo</th><th>Venda</th><th>Status</th><th>Rotatividade</th><th>Ações</th></tr></thead>
+          <thead><tr><th>Código</th><th>Produto</th><th>Categoria</th><th>Compatibilidade</th><th>Atual</th><th>Mín.</th><th>Ideal</th>{role === "admin" && <th>Custo</th>}<th>Venda</th><th>Status</th><th>Rotatividade</th><th>Ações</th></tr></thead>
           <tbody>
             {filtered.map(p => {
               const [ss, sc] = stockStatus(p); const [rs, rc] = rotation(p);
@@ -129,7 +129,7 @@ export default function Estoque({ role, onNewProduct }: Props) {
                 <td><span className="badge badge-blue">{p.category}</span></td>
                 <td style={{ fontSize: "12.5px", color: "#475569" }}>{p.compatibility}</td>
                 <td><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: p.stock === 0 ? "#DC2626" : p.stock <= p.minStock ? "#CA8A04" : "#0F172A" }}>{p.stock}</span></td>
-                <td>{p.minStock}</td><td>{p.idealStock}</td><td>{fmt(p.cost)}</td><td style={{ color: "#2563EB", fontWeight: 600 }}>{fmt(p.price)}</td>
+                <td>{p.minStock}</td><td>{p.idealStock}</td>{role === "admin" && <td>{fmt(p.cost)}</td>}<td style={{ color: "#2563EB", fontWeight: 600 }}>{fmt(p.price)}</td>
                 <td><span className={`badge ${sc}`}>{ss}</span></td><td><span className={`badge ${rc}`}>{rs}</span></td>
                 <td><div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
                   <button className="btn btn-ghost btn-sm" title="Detalhes" onClick={() => setSelected(p)}>Ver</button>
@@ -141,14 +141,14 @@ export default function Estoque({ role, onNewProduct }: Props) {
                 </div></td>
               </tr>;
             })}
-            {!filtered.length && <tr><td colSpan={12} style={{ textAlign: "center", padding: "42px", color: "#94A3B8" }}>Nenhum produto encontrado</td></tr>}
+            {!filtered.length && <tr><td colSpan={role === "admin" ? 12 : 11} style={{ textAlign: "center", padding: "42px", color: "#94A3B8" }}>Nenhum produto encontrado</td></tr>}
           </tbody>
         </table>
       </div>
 
       {selected && <div className="modal-overlay" onClick={() => setSelected(null)}><div className="modal" onClick={e => e.stopPropagation()} style={{ padding: "28px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "20px" }}><div><div style={{ fontSize: "11px", color: "#64748B" }}>{selected.sku}</div><h2 style={{ fontSize: "18px", margin: "4px 0" }}>{selected.name}</h2><div style={{ fontSize: "13px", color: "#64748B" }}>{selected.brand} · {selected.compatibility}</div></div><button onClick={() => setSelected(null)} className="btn btn-ghost btn-sm">✕</button></div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px" }}>{[["Estoque Atual", selected.stock],["Estoque Mínimo",selected.minStock],["Estoque Ideal",selected.idealStock],["Custo",fmt(selected.cost)],["Preço de Venda",fmt(selected.price)],["Lucro/unidade",fmt(selected.price-selected.cost)],["Total Comprado",selected.totalBought],["Total Vendido",selected.totalSold],["Dias sem venda",selected.daysSinceLastSale]].map(([label,value]) => <div key={String(label)} style={{ background: "#F8FAFC", borderRadius: "8px", padding: "12px" }}><div style={{ fontSize: "11px", color: "#64748B", fontWeight: 700 }}>{label}</div><div style={{ fontSize: "17px", fontWeight: 800, marginTop: "3px" }}>{value}</div></div>)}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px" }}>{[["Estoque Atual", selected.stock],["Estoque Mínimo",selected.minStock],["Estoque Ideal",selected.idealStock],...(role === "admin" ? [["Custo",fmt(selected.cost)]] : []),["Preço de Venda",fmt(selected.price)],...(role === "admin" ? [["Lucro/unidade",fmt(selected.price-selected.cost)]] : []),["Total Comprado",selected.totalBought],["Total Vendido",selected.totalSold],["Dias sem venda",selected.daysSinceLastSale]].map(([label,value]) => <div key={String(label)} style={{ background: "#F8FAFC", borderRadius: "8px", padding: "12px" }}><div style={{ fontSize: "11px", color: "#64748B", fontWeight: 700 }}>{label}</div><div style={{ fontSize: "17px", fontWeight: 800, marginTop: "3px" }}>{value}</div></div>)}</div>
         <div style={{ marginTop: "14px", padding: "14px", background: "#F8FAFC", borderRadius: "8px", fontSize: "13px", color: "#475569" }}>Última entrada: {selected.lastEntry || "—"} · Última venda: {selected.lastSale || "—"} · Fornecedor: {selected.supplier || "—"}</div>
       </div></div>}
 

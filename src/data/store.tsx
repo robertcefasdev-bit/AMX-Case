@@ -1,8 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { products as seedProducts, sales as seedSales, users as seedUsers, stockMovements as seedMovements, type Product, type Sale, type User, type StockMovement, type PaymentMethod } from "./mockData";
 
-const KEYS = { products:"amxcase.products.v3", sales:"amxcase.sales.v3", users:"amxcase.users.v3", movements:"amxcase.movements.v3", discountPassword:"amxcase.discountOverridePassword.v1" };
-const LEGACY_KEYS = { products:"amxcase.products.v2", sales:"amxcase.sales.v2", users:"amxcase.users.v2", movements:"amxcase.movements.v2" };
+const KEYS = { products:"amxcase.products.v4", sales:"amxcase.sales.v4", users:"amxcase.users.v4", movements:"amxcase.movements.v4", discountPassword:"amxcase.discountOverridePassword.v2" };
 
 function load<T>(key:string, seed:T, legacyKey?:string, migrate?:(value:T)=>T):T {
   try {
@@ -63,10 +62,10 @@ interface Store {
 const Ctx=createContext<Store|null>(null);
 
 export function DataProvider({children}:{children:React.ReactNode}){
- const [products,setProducts]=useState<Product[]>(()=>load(KEYS.products,migrateDates(seedProducts.map(p=>({...p}))),LEGACY_KEYS.products,migrateDates));
- const [sales,setSales]=useState<Sale[]>(()=>load(KEYS.sales,migrateDates(seedSales.map(s=>({...s}))),LEGACY_KEYS.sales,migrateDates));
- const [users,setUsers]=useState<User[]>(()=>load(KEYS.users,migrateDates(seedUsers.map(u=>({...u}))),LEGACY_KEYS.users,migrateDates));
- const [movements,setMovements]=useState<StockMovement[]>(()=>load(KEYS.movements,migrateDates(seedMovements.map(m=>({...m}))),LEGACY_KEYS.movements,migrateDates));
+ const [products,setProducts]=useState<Product[]>(()=>load(KEYS.products,migrateDates(seedProducts.map(p=>({...p})))));
+ const [sales,setSales]=useState<Sale[]>(()=>load(KEYS.sales,migrateDates(seedSales.map(s=>({...s})))));
+ const [users,setUsers]=useState<User[]>(()=>load(KEYS.users,migrateDates(seedUsers.map(u=>({...u})))));
+ const [movements,setMovements]=useState<StockMovement[]>(()=>load(KEYS.movements,migrateDates(seedMovements.map(m=>({...m})))));
  const [discountOverridePassword,setDiscountOverridePassword]=useState<string>(()=>load(KEYS.discountPassword,""));
  useEffect(()=>localStorage.setItem(KEYS.products,JSON.stringify(products)),[products]); useEffect(()=>localStorage.setItem(KEYS.sales,JSON.stringify(sales)),[sales]); useEffect(()=>localStorage.setItem(KEYS.users,JSON.stringify(users)),[users]); useEffect(()=>localStorage.setItem(KEYS.movements,JSON.stringify(movements)),[movements]); useEffect(()=>localStorage.setItem(KEYS.discountPassword,discountOverridePassword),[discountOverridePassword]);
  const value=useMemo<Store>(()=>({products,sales,users,movements,discountOverridePassword,setDiscountOverridePassword:(password:string)=>setDiscountOverridePassword(password),verifyDiscountOverridePassword:(password:string)=>!!discountOverridePassword && password===discountOverridePassword,

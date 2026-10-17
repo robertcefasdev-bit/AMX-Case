@@ -58,7 +58,7 @@ export default function HistoricoVendas({ userId, role }: Props) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1 style={{ fontSize: "22px", fontWeight: 800, color: "#0F172A", margin: 0 }}>{role === "vendedor" ? "Minhas Vendas" : "Histórico de Vendas"}</h1>
-          <p style={{ color: "#64748B", fontSize: "13.5px", margin: "4px 0 0" }}>{list.length} registro(s) · Faturamento: <strong>{fmt(totalRevenue)}</strong> · Lucro: <strong>{fmt(totalProfit)}</strong></p>
+          <p style={{ color: "#64748B", fontSize: "13.5px", margin: "4px 0 0" }}>{list.length} registro(s) · Faturamento: <strong>{fmt(totalRevenue)}</strong>{role === "admin" && <> · Lucro: <strong>{fmt(totalProfit)}</strong></>}</p>
         </div>
         {role === "admin" && <button className="btn btn-secondary btn-sm" onClick={() => downloadCSV("vendas.csv", list.map(s => ({Data:s.date,Horario:s.time,Vendedor:s.sellerName,Produto:s.productName,SKU:s.productSku,Quantidade:s.quantity,PrecoOriginal:s.originalPrice,Desconto:s.discount,ValorFinal:s.finalPrice,Custo:s.cost,Lucro:s.profit,Pagamento:s.paymentMethod,Status:s.status})))}>
           <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>

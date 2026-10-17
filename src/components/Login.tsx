@@ -14,7 +14,7 @@ export default function Login({ onLogin }: Props) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const user = users.find(u => u.username === username && u.password === password && u.status === "Ativo");
+    const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase() && u.password === password && u.status === "Ativo");
     if (user) {
       onLogin(user.id, user.role);
     } else {
@@ -70,9 +70,6 @@ export default function Login({ onLogin }: Props) {
             </button>
           </form>
 
-          <div style={{ marginTop: "20px", padding: "12px", background: "#F8FAFC", borderRadius: "6px", fontSize: "12px", color: "#64748B" }}>
-            <strong>Demo:</strong> admin / admin123 &nbsp;|&nbsp; carlos / carlos123
-          </div>
         </div>
       </div>
     </div>

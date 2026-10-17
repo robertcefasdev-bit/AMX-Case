@@ -184,9 +184,11 @@ export default function RegistrarVenda({ userId, role }: Props) {
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: 800, color: "#0F172A" }}>
                     <span>Total</span><span style={{ color: "#2563EB" }}>{fmt(total)}</span>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#16A34A", marginTop: "4px" }}>
-                    <span>Lucro estimado</span><span>{fmt(totalProfit)}</span>
-                  </div>
+                  {role === "admin" && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#16A34A", marginTop: "4px" }}>
+                      <span>Lucro estimado</span><span>{fmt(totalProfit)}</span>
+                    </div>
+                  )}
                 </div>
               </>
             )}

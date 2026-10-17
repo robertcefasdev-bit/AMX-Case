@@ -79,20 +79,6 @@ export default function Layout({ page, userId, role, onNavigate, onLogout, child
     setMobileOpen(false);
   }, [page]);
 
-  const mobilePrimary = role === "admin"
-    ? [
-        { id: "dashboard", label: "Início", icon: adminMenu.find(i => i.id === "dashboard")?.icon || "" },
-        { id: "estoque", label: "Estoque", icon: adminMenu.find(i => i.id === "estoque")?.icon || "" },
-        { id: "registrar-venda", label: "Vender", icon: adminMenu.find(i => i.id === "registrar-venda")?.icon || "" },
-        { id: "financeiro", label: "Financeiro", icon: adminMenu.find(i => i.id === "financeiro")?.icon || "" },
-      ]
-    : [
-        { id: "vendedor-dashboard", label: "Início", icon: vendedorMenu[0].icon },
-        { id: "registrar-venda", label: "Vender", icon: vendedorMenu[1].icon },
-        { id: "historico-vendas", label: "Vendas", icon: vendedorMenu[2].icon },
-        { id: "estoque", label: "Produtos", icon: vendedorMenu[3].icon },
-      ];
-
   return (
     <div className="app-shell" style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       {/* Mobile top bar */}
@@ -111,6 +97,9 @@ export default function Layout({ page, userId, role, onNavigate, onLogout, child
         </div>
         <button className="mobile-icon-btn" onClick={toggleTheme} aria-label="Alternar tema">
           <ThemeIcon theme={theme} />
+        </button>
+        <button className="mobile-icon-btn" onClick={onLogout} aria-label="Sair" title="Sair" style={{ color: "#F87171" }}>
+          <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
         </button>
         <div className="mobile-user-avatar">{user?.name?.charAt(0)}</div>
       </header>
@@ -175,16 +164,6 @@ export default function Layout({ page, userId, role, onNavigate, onLogout, child
           </button>
         </div>
       </aside>
-
-      {/* Mobile bottom navigation */}
-      <nav className="mobile-bottom-nav" aria-label="Navegação principal">
-        {mobilePrimary.map(item => (
-          <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => onNavigate(item.id as Page)}>
-            <Icon path={item.icon} />
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </nav>
 
       {/* Main content */}
       <main className="app-main" style={{ flex: 1, overflowY: "auto", background: "#F1F5F9" }}>

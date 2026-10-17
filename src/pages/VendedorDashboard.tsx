@@ -14,9 +14,7 @@ export default function VendedorDashboard({ userId, onNavigate }: Props) {
     const d = new Date(); const dates = Array.from({length:7},(_,i)=>{const x=new Date(d); x.setDate(d.getDate()-i); return x.toLocaleDateString("pt-BR");});
     return dates.includes(s.date);
   });
-  const monthRevenue = mySales.reduce((acc, s) => acc + s.finalPrice, 0);
   const todayRevenue = todaySales.reduce((acc, s) => acc + s.finalPrice, 0);
-  const weekRevenue = weekSales.reduce((acc, s) => acc + s.finalPrice, 0);
 
   const availableProducts = products.filter(p => p.stock > 0 && p.status === "Ativo").slice(0, 5);
 
@@ -32,7 +30,6 @@ export default function VendedorDashboard({ userId, onNavigate }: Props) {
         <div className="kpi-card">
           <div className="kpi-label">Vendas Hoje</div>
           <div className="kpi-value">{todaySales.length}</div>
-          <div className="kpi-sub">{fmt(todayRevenue)} faturado</div>
         </div>
         <div className="kpi-card">
           <div className="kpi-label">Valor Vendido Hoje</div>
@@ -42,12 +39,10 @@ export default function VendedorDashboard({ userId, onNavigate }: Props) {
         <div className="kpi-card">
           <div className="kpi-label">Vendas da Semana</div>
           <div className="kpi-value">{weekSales.length}</div>
-          <div className="kpi-sub">{fmt(weekRevenue)} faturado</div>
         </div>
         <div className="kpi-card">
           <div className="kpi-label">Vendas do Mês</div>
           <div className="kpi-value">{mySales.length}</div>
-          <div className="kpi-sub">{fmt(monthRevenue)} total</div>
         </div>
       </div>
 
