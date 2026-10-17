@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../data/store";
 import { useTheme } from "../context/ThemeContext";
+import { LOGO_ICON } from "../assets/logoData";
 
 type Page =
   | "dashboard" | "vendedor-dashboard"
@@ -87,8 +88,8 @@ export default function Layout({ page, userId, role, onNavigate, onLogout, child
           <span className="hamburger"><i /><i /><i /></span>
         </button>
         <div className="mobile-brand">
-          {/* ALTERAÇÃO DA LOGO: coloque o arquivo PNG da loja em public/logo.png */}
-          <img className="mobile-brand-logo" src="/logo-icon.png" alt="Logo da empresa" />
+          {/* ALTERAÇÃO DA LOGO: a imagem fica embutida em src/assets/logoData.ts */}
+          <img className="mobile-brand-logo" src={LOGO_ICON} alt="Logo da empresa" />
           <div>
             {/* ALTERAÇÃO DO NOME DA EMPRESA: troque o texto abaixo */}
             <div className="mobile-brand-title">AMX Case</div>
@@ -111,8 +112,8 @@ export default function Layout({ page, userId, role, onNavigate, onLogout, child
         {/* Logo */}
         <div className="sidebar-brand-row" style={{ padding: "20px 20px 16px", borderBottom: "1px solid #1E293B" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {/* ALTERAÇÃO DA LOGO: coloque o arquivo PNG da loja em public/logo.png */}
-            <img className="sidebar-brand-logo" src="/logo-icon.png" alt="Logo da empresa" />
+            {/* ALTERAÇÃO DA LOGO: a imagem fica embutida em src/assets/logoData.ts */}
+            <img className="sidebar-brand-logo" src={LOGO_ICON} alt="Logo da empresa" />
             <div>
               {/* ALTERAÇÃO DO NOME DA EMPRESA: troque o texto abaixo */}
               <div style={{ fontFamily: "'Work Sans', sans-serif", fontSize: "13.5px", fontWeight: 700, color: "white", lineHeight: 1.2 }}>AMX Case</div>

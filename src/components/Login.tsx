@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../data/store";
+import { LOGO_FULL } from "../assets/logoData";
 
 interface Props {
   onLogin: (userId: string, role: "admin" | "vendedor") => void;
@@ -30,8 +31,8 @@ export default function Login({ onLogin }: Props) {
       <div style={{ width: "100%", maxWidth: "400px", position: "relative" }}>
         {/* Logo area */}
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
-          {/* ALTERAÇÃO DA LOGO: coloque o arquivo PNG da loja em public/logo.png */}
-          <img className="login-logo" src="/logo.png" alt="Logo da empresa" />
+          {/* ALTERAÇÃO DA LOGO: a imagem fica embutida em src/assets/logoData.ts */}
+          <img className="login-logo" src={LOGO_FULL} alt="Logo da empresa" />
           {/* ALTERAÇÃO DO NOME DA EMPRESA: troque o texto abaixo */}
           <h1 style={{ fontFamily: "'Work Sans', sans-serif", fontSize: "22px", fontWeight: 700, color: "white", margin: "0 0 4px" }}>AMX Case Gestão</h1>
           <p style={{ color: "#64748B", fontSize: "14px", margin: 0 }}>Sistema de Gestão Empresarial</p>
