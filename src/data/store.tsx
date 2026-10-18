@@ -1,141 +1,216 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { products as seedProducts, sales as seedSales, users as seedUsers, stockMovements as seedMovements, type Product, type Sale, type User, type StockMovement, type PaymentMethod } from "./mockData";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { Product, Sale, User, StockMovement, PaymentMethod } from "./mockData";
+import { ApiError, errorMessage, rpc } from "./api";
 
-const KEYS = { products:"amxcase.products.v4", sales:"amxcase.sales.v4", users:"amxcase.users.v4", movements:"amxcase.movements.v4", discountPassword:"amxcase.discountOverridePassword.v2" };
+// ───────── utilitários (continuam iguais) ─────────
+export function todayBR() { const d = new Date(); return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }); }
+export function todayISO() { const d = new Date(); return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d); }
+export function daysSince(date?: string) { if (!date) return 0; const d = new Date(`${date}T00:00:00`); return Number.isNaN(d.getTime()) ? 0 : Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000)); }
+export function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
+  if (!rows.length) { alert("Não há dados para exportar."); return; }
+  const headers = Object.keys(rows[0]);
+  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = "\ufeff" + [headers.map(esc).join(";"), ...rows.map((r) => headers.map((h) => esc(r[h])).join(";"))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
-function load<T>(key:string, seed:T, legacyKey?:string, migrate?:(value:T)=>T):T {
-  try {
-    const raw=localStorage.getItem(key);
-    if(raw) return JSON.parse(raw);
-    const legacy=legacyKey ? localStorage.getItem(legacyKey) : null;
-    if(legacy){ const value=JSON.parse(legacy) as T; return migrate ? migrate(value) : value; }
-    return seed;
-  } catch { return seed; }
-}
-function currentYear(){ return new Date().getFullYear(); }
-function normalizeDate(value:string){
-  if(!value) return value;
-  const year=currentYear();
-  const m=value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if(m && Number(m[3]) < year) return `${m[1]}/${m[2]}/${year}`;
-  const iso=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(iso && Number(iso[1]) < year) return `${year}-${iso[2]}-${iso[3]}`;
-  return value;
-}
-function weekdayFromDate(value:string){
-  const br=value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  const d=br ? new Date(Number(br[3]),Number(br[2])-1,Number(br[1])) : new Date(value);
-  return ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"][d.getDay()];
-}
-function migrateDates<T extends any[]>(items:T):T {
-  return items.map((item:any)=>{
-    const next={...item};
-    for(const key of ["date","entryDate","lastEntry","lastSale","createdAt"]){ if(typeof next[key]==="string") next[key]=normalizeDate(next[key]); }
-    if(typeof next.date==="string" && "weekday" in next) next.weekday=weekdayFromDate(next.date);
-    return next;
-  }) as T;
-}
-function id(prefix:string){ return `${prefix}-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`; }
-function nowParts(){
-  const now=new Date();
-  const parts=new Intl.DateTimeFormat("pt-BR", {timeZone:"America/Sao_Paulo", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit", weekday:"long"}).formatToParts(now);
-  const get=(type:string)=>parts.find(p=>p.type===type)?.value || "";
-  const weekdayMap:Record<string,string>={"domingo":"Domingo","segunda-feira":"Segunda","terça-feira":"Terça","quarta-feira":"Quarta","quinta-feira":"Quinta","sexta-feira":"Sexta","sábado":"Sábado"};
-  return {date:`${get("day")}/${get("month")}/${get("year")}`,iso:`${get("year")}-${get("month")}-${get("day")}`,time:`${get("hour")}:${get("minute")}`,weekday:weekdayMap[get("weekday")] || get("weekday")};
-}
-export function todayBR(){ const d=new Date(); return d.toLocaleDateString("pt-BR", {timeZone:"America/Sao_Paulo"}); }
-export function todayISO(){ const d=new Date(); return new Intl.DateTimeFormat("en-CA", {timeZone:"America/Sao_Paulo", year:"numeric", month:"2-digit", day:"2-digit"}).format(d); }
-export function daysSince(date?:string){ if(!date)return 0; const d=new Date(`${date}T00:00:00`); return Number.isNaN(d.getTime())?0:Math.max(0,Math.floor((Date.now()-d.getTime())/86400000)); }
-export function downloadCSV(filename:string, rows:Record<string,unknown>[]){ if(!rows.length){ alert("Não há dados para exportar."); return; } const headers=Object.keys(rows[0]); const esc=(v:unknown)=>`"${String(v ?? "").replace(/"/g,'""')}"`; const csv="\ufeff"+[headers.map(esc).join(";") , ...rows.map(r=>headers.map(h=>esc(r[h])).join(";"))].join("\n"); const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); URL.revokeObjectURL(a.href); }
+// ───────── tipos ─────────
+export interface AuthUser extends User { mustChangePassword: boolean }
+export interface Result { ok: boolean; message: string }
+export type NewProduct = Omit<Product, "id" | "totalBought" | "totalSold" | "daysSinceLastSale" | "status">;
+export interface NewUser { name: string; username: string; password: string; status: "Ativo" | "Inativo" }
+export interface UserPatch { name?: string; username?: string; password?: string; status?: "Ativo" | "Inativo" }
 
 interface Store {
- products:Product[]; sales:Sale[]; users:User[]; movements:StockMovement[];
- addProduct:(input:Omit<Product,"id"|"totalBought"|"totalSold"|"daysSinceLastSale"|"status">)=>Product;
- updateProduct:(id:string,patch:Partial<Product>)=>void; deactivateProduct:(id:string)=>void; deleteProduct:(id:string)=>{ok:boolean; message:string}; addStock:(id:string,quantity:number,entryDate?:string,userId?:string)=>void;
- registerSale:(args:{sellerId:string; items:{productId:string; quantity:number}[]; paymentMethod:PaymentMethod; discountPercent:number; overridePassword?:string})=>{ok:boolean; message:string; sales:Sale[]};
- cancelSale:(saleId:string,userId:string)=>void; deleteSale:(saleId:string)=>{ok:boolean; message:string};
- updateSale:(saleId:string,patch:{quantity?:number; paymentMethod?:PaymentMethod; discountPercent?:number})=>{ok:boolean; message:string};
- addUser:(input:Omit<User,"id"|"createdAt">)=>User; updateUser:(id:string,patch:Partial<User>)=>void; deleteUser:(id:string)=>{ok:boolean; message:string};
- resetAll:()=>void;
- discountOverridePassword:string; setDiscountOverridePassword:(password:string)=>void; verifyDiscountOverridePassword:(password:string)=>boolean;
-}
-const Ctx=createContext<Store|null>(null);
+  /** "loading" só enquanto confere se já existe sessão aberta. */
+  status: "loading" | "ready";
+  currentUser: AuthUser | null;
+  serverError: string;
+  dataStatus: "idle" | "loading" | "ready" | "error";
+  dataError: string;
 
-export function DataProvider({children}:{children:React.ReactNode}){
- const [products,setProducts]=useState<Product[]>(()=>load(KEYS.products,migrateDates(seedProducts.map(p=>({...p})))));
- const [sales,setSales]=useState<Sale[]>(()=>load(KEYS.sales,migrateDates(seedSales.map(s=>({...s})))));
- const [users,setUsers]=useState<User[]>(()=>load(KEYS.users,migrateDates(seedUsers.map(u=>({...u})))));
- const [movements,setMovements]=useState<StockMovement[]>(()=>load(KEYS.movements,migrateDates(seedMovements.map(m=>({...m})))));
- const [discountOverridePassword,setDiscountOverridePassword]=useState<string>(()=>load(KEYS.discountPassword,""));
- useEffect(()=>localStorage.setItem(KEYS.products,JSON.stringify(products)),[products]); useEffect(()=>localStorage.setItem(KEYS.sales,JSON.stringify(sales)),[sales]); useEffect(()=>localStorage.setItem(KEYS.users,JSON.stringify(users)),[users]); useEffect(()=>localStorage.setItem(KEYS.movements,JSON.stringify(movements)),[movements]); useEffect(()=>localStorage.setItem(KEYS.discountPassword,discountOverridePassword),[discountOverridePassword]);
- const value=useMemo<Store>(()=>({products,sales,users,movements,discountOverridePassword,setDiscountOverridePassword:(password:string)=>setDiscountOverridePassword(password),verifyDiscountOverridePassword:(password:string)=>!!discountOverridePassword && password===discountOverridePassword,
-  addProduct(input){const p:Product={...input,id:id("p"),totalBought:Number(input.stock||0),totalSold:0,daysSinceLastSale:0,status:"Ativo"}; setProducts(x=>[...x,p]); if(p.stock>0){const n=nowParts(); setMovements(x=>[{id:id("m"),date:p.entryDate,time:n.time,weekday:n.weekday,type:"Entrada",productId:p.id,productName:p.name,quantity:p.stock,value:p.cost*p.stock,userId:"system",userName:"Sistema",notes:"Estoque inicial"},...x]);} return p;},
-  updateProduct(id,patch){setProducts(x=>x.map(p=>p.id===id?{...p,...patch}:p));},
-  deactivateProduct(id){setProducts(x=>x.map(p=>p.id===id?{...p,status:"Inativo"}:p));},
-  deleteProduct(pid){
-    const hasSales=sales.some(s=>s.productId===pid);
-    if(hasSales)return{ok:false,message:"Este produto possui vendas registradas e não pode ser excluído. Você pode inativá-lo."};
-    setProducts(x=>x.filter(p=>p.id!==pid));
-    setMovements(x=>x.filter(m=>m.productId!==pid));
-    return{ok:true,message:"Produto removido."};
-  },
-  addStock(pid,qty,entryDate){if(!Number.isFinite(qty)||qty<=0)return; const p=products.find(x=>x.id===pid); if(!p)return; const n=nowParts(); setProducts(x=>x.map(q=>q.id===pid?{...q,stock:q.stock+qty,totalBought:q.totalBought+qty,lastEntry:entryDate||n.iso,entryDate:q.entryDate||entryDate||n.iso}:q)); setMovements(x=>[{id:id("m"),date:entryDate||n.iso,time:n.time,weekday:n.weekday,type:"Entrada",productId:pid,productName:p.name,quantity:qty,value:p.cost*qty,userId:"system",userName:"Administrador"},...x]);},
-  registerSale({sellerId,items,paymentMethod,discountPercent,overridePassword}){
-    const seller=users.find(u=>u.id===sellerId);
-    if(!seller)return{ok:false,message:"Vendedor não encontrado.",sales:[]};
-    if(!Number.isFinite(discountPercent)||discountPercent<0||discountPercent>100)return{ok:false,message:"Percentual de desconto inválido.",sales:[]};
-    if(discountPercent>20){
-      if(!discountOverridePassword)return{ok:false,message:"O administrador ainda não definiu a senha para descontos acima de 20%.",sales:[]};
-      if(overridePassword!==discountOverridePassword)return{ok:false,message:"Senha de autorização para desconto acima de 20% inválida.",sales:[]};
-    }
-    for(const i of items){const p=products.find(x=>x.id===i.productId); if(!p)return{ok:false,message:"Produto não encontrado.",sales:[]}; if(i.quantity<=0||i.quantity>p.stock)return{ok:false,message:`Estoque insuficiente para ${p.name}. Disponível: ${p.stock}.`,sales:[]};}
-    const subtotal=items.reduce((sum,i)=>{const p=products.find(x=>x.id===i.productId)!;return sum+p.price*i.quantity;},0);
-    const totalDiscount=subtotal*(discountPercent/100);
-    const n=nowParts();
-    const created:Sale[]=items.map(i=>{const p=products.find(x=>x.id===i.productId)!; const original=p.price*i.quantity; const itemDiscount=subtotal?totalDiscount*(original/subtotal):0; const final=original-itemDiscount; const cost=p.cost*i.quantity; return{id:id("v"),date:n.date,time:n.time,weekday:n.weekday,sellerId,sellerName:seller.name,productId:p.id,productName:p.name,productSku:p.sku,category:p.category,quantity:i.quantity,originalPrice:p.price,discount:Number(itemDiscount.toFixed(2)),finalPrice:Number(final.toFixed(2)),cost,profit:Number((final-cost).toFixed(2)),paymentMethod,status:"Concluída"};});
-    setSales(x=>[...created,...x]); setProducts(x=>x.map(p=>{const sold=created.filter(s=>s.productId===p.id).reduce((a,s)=>a+s.quantity,0); return sold?{...p,stock:p.stock-sold,totalSold:p.totalSold+sold,lastSale:n.iso,daysSinceLastSale:0}:{...p,daysSinceLastSale:p.lastSale?daysSince(p.lastSale):daysSince(p.entryDate)};})); setMovements(x=>[...created.map(s=>({id:id("m"),date:n.iso,time:n.time,weekday:n.weekday,type:"Saída" as const,productId:s.productId,productName:s.productName,quantity:s.quantity,value:s.finalPrice,userId:sellerId,userName:seller.name,notes:`Venda ${s.id}`})),...x]); return{ok:true,message:"Venda registrada com sucesso.",sales:created};},
-  cancelSale(saleId,userId){const s=sales.find(x=>x.id===saleId&&x.status==="Concluída"); if(!s)return; const n=nowParts(); setSales(x=>x.map(q=>q.id===saleId?{...q,status:"Cancelada"}:q)); setProducts(x=>x.map(p=>p.id===s.productId?{...p,stock:p.stock+s.quantity,totalSold:Math.max(0,p.totalSold-s.quantity)}:p)); setMovements(x=>[{id:id("m"),date:n.iso,time:n.time,weekday:n.weekday,type:"Estorno",productId:s.productId,productName:s.productName,quantity:s.quantity,value:s.finalPrice,userId,userName:"Administrador",notes:`Estorno da venda ${saleId}`},...x]);},
-  deleteSale(saleId){
-    const s=sales.find(x=>x.id===saleId);
-    if(!s)return{ok:false,message:"Venda não encontrada."};
-    if(s.status==="Concluída"){
-      setProducts(x=>x.map(p=>p.id===s.productId?{...p,stock:p.stock+s.quantity,totalSold:Math.max(0,p.totalSold-s.quantity)}:p));
-    }
-    setSales(x=>x.filter(q=>q.id!==saleId));
-    setMovements(x=>x.filter(m=>m.notes!==`Venda ${saleId}`));
-    return{ok:true,message:"Venda removida."};
-  },
-  updateSale(saleId,patch){
-    const s=sales.find(x=>x.id===saleId);
-    if(!s)return{ok:false,message:"Venda não encontrada."};
-    if(s.status!=="Concluída")return{ok:false,message:"Apenas vendas concluídas podem ser editadas."};
-    const p=products.find(x=>x.id===s.productId);
-    if(!p)return{ok:false,message:"Produto da venda não encontrado."};
-    const newQty=patch.quantity!==undefined?patch.quantity:s.quantity;
-    if(!Number.isInteger(newQty)||newQty<=0)return{ok:false,message:"Quantidade inválida."};
-    const delta=newQty-s.quantity;
-    if(delta>0 && delta>p.stock)return{ok:false,message:`Estoque insuficiente. Disponível: ${p.stock}.`};
-    const discountPercent=patch.discountPercent!==undefined?Math.max(0,Math.min(100,patch.discountPercent)):(s.originalPrice*s.quantity?s.discount/(s.originalPrice*s.quantity)*100:0);
-    const subtotal=s.originalPrice*newQty;
-    const discount=Number((subtotal*(discountPercent/100)).toFixed(2));
-    const finalPrice=Number((subtotal-discount).toFixed(2));
-    const cost=p.cost*newQty;
-    const profit=Number((finalPrice-cost).toFixed(2));
-    const paymentMethod=patch.paymentMethod||s.paymentMethod;
-    setProducts(x=>x.map(q=>q.id===p.id?{...q,stock:q.stock-delta,totalSold:Math.max(0,q.totalSold+delta)}:q));
-    setSales(x=>x.map(q=>q.id===saleId?{...q,quantity:newQty,discount,finalPrice,cost,profit,paymentMethod}:q));
-    return{ok:true,message:"Venda atualizada."};
-  },
-  addUser(input){const u:User={...input,id:id("u"),createdAt:nowParts().iso}; setUsers(x=>[...x,u]); return u;}, updateUser(uid,patch){setUsers(x=>x.map(u=>u.id===uid?{...u,...patch}:u));},
-  deleteUser(uid){
-    const hasSales=sales.some(s=>s.sellerId===uid);
-    if(hasSales)return{ok:false,message:"Este vendedor possui vendas registradas e não pode ser excluído. Você pode inativá-lo."};
-    setUsers(x=>x.filter(u=>u.id!==uid));
-    return{ok:true,message:"Vendedor removido."};
-  },
-  resetAll(){setProducts(migrateDates(seedProducts.map(p=>({...p}))));setSales(migrateDates(seedSales.map(s=>({...s}))));setUsers(migrateDates(seedUsers.map(u=>({...u}))));setMovements(migrateDates(seedMovements.map(m=>({...m}))));}
- }),[products,sales,users,movements,discountOverridePassword]);
- return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  products: Product[]; sales: Sale[]; users: User[]; movements: StockMovement[];
+  hasDiscountPassword: boolean;
+
+  login: (username: string, password: string) => Promise<Result>;
+  logout: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<Result>;
+  refresh: () => Promise<void>;
+
+  addProduct: (input: NewProduct) => Promise<Result>;
+  updateProduct: (id: string, patch: Partial<Product>) => Promise<Result>;
+  deactivateProduct: (id: string) => Promise<Result>;
+  deleteProduct: (id: string) => Promise<Result>;
+  addStock: (id: string, quantity: number, entryDate?: string) => Promise<Result>;
+
+  registerSale: (args: { sellerId: string; items: { productId: string; quantity: number }[]; paymentMethod: PaymentMethod; discountPercent: number; overridePassword?: string }) => Promise<Result & { sales: Sale[] }>;
+  cancelSale: (saleId: string) => Promise<Result>;
+  deleteSale: (saleId: string) => Promise<Result>;
+  updateSale: (saleId: string, patch: { quantity?: number; paymentMethod?: PaymentMethod; discountPercent?: number }) => Promise<Result>;
+
+  addUser: (input: NewUser) => Promise<Result>;
+  updateUser: (id: string, patch: UserPatch) => Promise<Result>;
+  deleteUser: (id: string) => Promise<Result>;
+  setDiscountOverridePassword: (password: string) => Promise<Result>;
 }
-export function useStore(){const c=useContext(Ctx);if(!c)throw new Error("useStore deve ser usado dentro de DataProvider");return c;}
-export function useProducts(){const s=useStore();return {products:s.products,addProduct:s.addProduct,updateProduct:s.updateProduct,deactivateProduct:s.deactivateProduct,deleteProduct:s.deleteProduct,addStock:s.addStock,resetProducts:()=>s.resetAll()};}
+
+interface Bootstrap {
+  products: Product[]; sales: Sale[]; users: User[]; movements: StockMovement[]; hasDiscountPassword: boolean;
+}
+
+const Ctx = createContext<Store | null>(null);
+
+export function DataProvider({ children }: { children: React.ReactNode }) {
+  const [status, setStatus] = useState<"loading" | "ready">("loading");
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [serverError, setServerError] = useState("");
+  const [dataStatus, setDataStatus] = useState<Store["dataStatus"]>("idle");
+  const [dataError, setDataError] = useState("");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [hasDiscountPassword, setHasDiscountPassword] = useState(false);
+
+  const clearData = useCallback(() => {
+    setProducts([]); setSales([]); setUsers([]); setMovements([]); setHasDiscountPassword(false);
+    setDataStatus("idle"); setDataError("");
+  }, []);
+
+  // Sessão expirada ou usuário removido: volta para o login.
+  const handleError = useCallback((e: unknown) => {
+    if (e instanceof ApiError && e.code === "UNAUTHENTICATED") {
+      setCurrentUser(null);
+      clearData();
+    }
+  }, [clearData]);
+
+  const refresh = useCallback(async () => {
+    setDataStatus((s) => (s === "ready" ? s : "loading"));
+    try {
+      const d = await rpc<Bootstrap>("bootstrap");
+      setProducts(d.products); setSales(d.sales); setUsers(d.users); setMovements(d.movements);
+      setHasDiscountPassword(d.hasDiscountPassword);
+      setDataStatus("ready"); setDataError("");
+    } catch (e) {
+      handleError(e);
+      setDataStatus((s) => (s === "ready" ? s : "error"));
+      setDataError(errorMessage(e));
+    }
+  }, [handleError]);
+
+  // Ao abrir o app: já existe sessão?
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = await rpc<{ user: AuthUser }>("me");
+        setCurrentUser(d.user);
+      } catch (e) {
+        if (!(e instanceof ApiError && e.code === "UNAUTHENTICATED")) setServerError(errorMessage(e));
+      } finally {
+        setStatus("ready");
+      }
+    })();
+  }, []);
+
+  // Com usuário logado: carrega os dados e mantém atualizados (ao voltar para a aba e a cada 60 s).
+  const userId = currentUser?.id;
+  const mustChange = currentUser?.mustChangePassword;
+  useEffect(() => {
+    if (!userId || mustChange) return;
+    refresh();
+    const tick = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", tick);
+    const timer = setInterval(tick, 60000);
+    return () => { document.removeEventListener("visibilitychange", tick); clearInterval(timer); };
+  }, [userId, mustChange, refresh]);
+
+  // Executa uma ação de escrita e recarrega os dados.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  async function act(action: string, params: Record<string, unknown>): Promise<Result> {
+    try {
+      await rpc(action, params);
+      await refreshRef.current();
+      return { ok: true, message: "OK" };
+    } catch (e) {
+      handleError(e);
+      return { ok: false, message: errorMessage(e) };
+    }
+  }
+
+  const value: Store = {
+    status, currentUser, serverError, dataStatus, dataError,
+    products, sales, users, movements, hasDiscountPassword,
+    refresh,
+
+    async login(username, password) {
+      try {
+        const d = await rpc<{ user: AuthUser }>("login", { username, password });
+        setServerError("");
+        setCurrentUser(d.user);
+        return { ok: true, message: "OK" };
+      } catch (e) {
+        return { ok: false, message: errorMessage(e) };
+      }
+    },
+    async logout() {
+      try { await rpc("logout"); } catch { /* sai mesmo assim */ }
+      setCurrentUser(null);
+      clearData();
+    },
+    async changePassword(currentPassword, newPassword) {
+      try {
+        await rpc("changePassword", { currentPassword, newPassword });
+        const d = await rpc<{ user: AuthUser }>("me");
+        setCurrentUser(d.user);
+        return { ok: true, message: "OK" };
+      } catch (e) {
+        handleError(e);
+        return { ok: false, message: errorMessage(e) };
+      }
+    },
+
+    addProduct: (input) => act("addProduct", { ...input }),
+    updateProduct: (id, patch) => act("updateProduct", { id, patch }),
+    deactivateProduct: (id) => act("updateProduct", { id, patch: { status: "Inativo" } }),
+    deleteProduct: (id) => act("deleteProduct", { id }),
+    addStock: (id, quantity, entryDate) => act("addStock", { id, quantity, entryDate }),
+
+    async registerSale(args) {
+      try {
+        const d = await rpc<{ sales: Sale[] }>("registerSale", { ...args });
+        await refreshRef.current();
+        return { ok: true, message: "Venda registrada com sucesso.", sales: d.sales };
+      } catch (e) {
+        handleError(e);
+        return { ok: false, message: errorMessage(e), sales: [] };
+      }
+    },
+    cancelSale: (id) => act("cancelSale", { id }),
+    deleteSale: (id) => act("deleteSale", { id }),
+    updateSale: (id, patch) => act("updateSale", { id, patch }),
+
+    addUser: (input) => act("addUser", { ...input, role: "vendedor" }),
+    updateUser: (id, patch) => act("updateUser", { id, patch }),
+    deleteUser: (id) => act("deleteUser", { id }),
+    setDiscountOverridePassword: (password) => act("setDiscountPassword", { password }),
+  };
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useStore() {
+  const c = useContext(Ctx);
+  if (!c) throw new Error("useStore deve ser usado dentro de DataProvider");
+  return c;
+}
+export function useProducts() {
+  const s = useStore();
+  return { products: s.products, addProduct: s.addProduct, updateProduct: s.updateProduct, deactivateProduct: s.deactivateProduct, deleteProduct: s.deleteProduct, addStock: s.addStock };
+}

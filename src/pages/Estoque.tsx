@@ -49,11 +49,12 @@ export default function Estoque({ role, onNewProduct }: Props) {
     setEntryQty("");
   }
 
-  function confirmEntry() {
+  async function confirmEntry() {
     if (!entryProduct) return;
     const qty = Number(entryQty);
     if (!Number.isInteger(qty) || qty <= 0) return;
-    addStock(entryProduct.id, qty);
+    const result = await addStock(entryProduct.id, qty);
+    if (!result.ok) { alert(result.message); return; }
     setEntryProduct(null);
   }
 
@@ -67,7 +68,7 @@ export default function Estoque({ role, onNewProduct }: Props) {
     setEditProduct(p);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editProduct) return;
     const cost = Number(editForm.cost.replace(",", "."));
     const price = Number(editForm.price.replace(",", "."));
@@ -76,18 +77,19 @@ export default function Estoque({ role, onNewProduct }: Props) {
     if (!editForm.name.trim()) { alert("Informe o nome do produto."); return; }
     if (!Number.isFinite(cost) || cost < 0 || !Number.isFinite(price) || price < 0) { alert("Custo e preço devem ser números válidos."); return; }
     if (!Number.isInteger(minStock) || !Number.isInteger(idealStock) || minStock < 0 || idealStock < minStock) { alert("Verifique o estoque mínimo e ideal (ideal não pode ser menor que o mínimo)."); return; }
-    updateProduct(editProduct.id, {
+    const result = await updateProduct(editProduct.id, {
       name: editForm.name.trim(), category: editForm.category as Product["category"], brand: editForm.brand.trim(),
       compatibility: editForm.compatibility.trim(), cost, price, minStock, idealStock,
       supplier: editForm.supplier.trim(), excludeFromRotation: editForm.excludeFromRotation,
     });
+    if (!result.ok) { alert(result.message); return; }
     setEditProduct(null);
   }
 
-  function handleDelete(p: Product) {
+  async function handleDelete(p: Product) {
     if (role !== "admin") return;
     if (!window.confirm(`Remover "${p.name}" definitivamente? Esta ação não pode ser desfeita.`)) return;
-    const result = deleteProduct(p.id);
+    const result = await deleteProduct(p.id);
     if (!result.ok) alert(result.message);
   }
 

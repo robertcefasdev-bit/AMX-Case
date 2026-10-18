@@ -70,9 +70,9 @@ function ThemeIcon({ theme }: { theme: "light" | "dark" }) {
 }
 
 export default function Layout({ page, userId, role, onNavigate, onLogout, children }: Props) {
-  const { users } = useStore();
+  const { currentUser } = useStore();
   const { theme, toggleTheme } = useTheme();
-  const user = users.find(u => u.id === userId);
+  const user = currentUser && currentUser.id === userId ? currentUser : undefined;
   const menu = role === "admin" ? adminMenu : vendedorMenu;
   const [mobileOpen, setMobileOpen] = useState(false);
 

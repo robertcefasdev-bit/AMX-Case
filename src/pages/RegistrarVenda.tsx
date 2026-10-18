@@ -10,7 +10,7 @@ const PAYMENTS: PaymentMethodOption[] = ["Dinheiro", "PIX", "Débito", "Crédito
 interface CartItem { product: Product; qty: number; }
 
 export default function RegistrarVenda({ userId, role }: Props) {
-  const { products, users, registerSale, discountOverridePassword } = useStore();
+  const { products, users, registerSale, hasDiscountPassword } = useStore();
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [payment, setPayment] = useState<PaymentMethodOption>("PIX");
@@ -18,9 +18,10 @@ export default function RegistrarVenda({ userId, role }: Props) {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [overridePassword, setOverridePassword] = useState("");
   const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const sellers = users.filter(u => u.role === "vendedor" && u.status === "Ativo");
+  const sellers = users.filter(u => u.status === "Ativo");
 
   const results = search.length > 1
     ? products.filter(p => p.status === "Ativo" && (
@@ -58,10 +59,12 @@ export default function RegistrarVenda({ userId, role }: Props) {
   const total = subtotal - totalDiscount;
   const totalProfit = cart.reduce((acc, c) => acc + (c.product.price - c.product.cost) * c.qty, 0) - totalDiscount;
 
-  function confirm() {
-    if (cart.length === 0) return;
-    if (discountPercent > 20 && !discountOverridePassword) { setErrorMsg("O administrador ainda não definiu a senha para autorizar descontos acima de 20%."); return; }
-    const result = registerSale({ sellerId, paymentMethod: payment, discountPercent, overridePassword: discountPercent > 20 ? overridePassword : undefined, items: cart.map(c => ({ productId: c.product.id, quantity: c.qty })) });
+  async function confirm() {
+    if (cart.length === 0 || submitting) return;
+    if (discountPercent > 20 && !hasDiscountPassword) { setErrorMsg("O administrador ainda não definiu a senha para autorizar descontos acima de 20%."); return; }
+    setSubmitting(true);
+    const result = await registerSale({ sellerId, paymentMethod: payment, discountPercent, overridePassword: discountPercent > 20 ? overridePassword : undefined, items: cart.map(c => ({ productId: c.product.id, quantity: c.qty })) });
+    setSubmitting(false);
     if (!result.ok) { setErrorMsg(result.message); return; }
     setSuccess(true); setCart([]); setSearch(""); setDiscountPercent(0); setOverridePassword(""); setErrorMsg("");
     setTimeout(() => setSuccess(false), 4000);
@@ -159,7 +162,7 @@ export default function RegistrarVenda({ userId, role }: Props) {
             {discountPercent > 20 && (
               <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: "8px", padding: "12px", marginBottom: "14px" }}>
                 <div style={{ fontSize: "12px", fontWeight: 700, color: "#9A3412", marginBottom: "6px" }}>Autorização necessária</div>
-                {discountOverridePassword ? (
+                {hasDiscountPassword ? (
                   <input type="password" className="input" placeholder="Senha definida pelo administrador" value={overridePassword} onChange={e => setOverridePassword(e.target.value)} />
                 ) : (
                   <div style={{ fontSize: "12px", color: "#9A3412" }}>O administrador ainda precisa definir a senha para permitir descontos acima de 20%.</div>
@@ -206,8 +209,8 @@ export default function RegistrarVenda({ userId, role }: Props) {
             </div>
           </div>
 
-          <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", padding: "13px", fontSize: "15px" }} onClick={confirm} disabled={cart.length === 0}>
-            Confirmar Venda · {fmt(total)}
+          <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", padding: "13px", fontSize: "15px" }} onClick={confirm} disabled={cart.length === 0 || submitting}>
+            {submitting ? "Registrando..." : `Confirmar Venda · ${fmt(total)}`}
           </button>
         </div>
       </div>

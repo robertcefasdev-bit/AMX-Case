@@ -2,25 +2,22 @@ import { useState } from "react";
 import { useStore } from "../data/store";
 import { LOGO_FULL } from "../assets/logoData";
 
-interface Props {
-  onLogin: (userId: string, role: "admin" | "vendedor") => void;
-}
-
-export default function Login({ onLogin }: Props) {
-  const { users } = useStore();
+export default function Login() {
+  const { login, serverError } = useStore();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase() && u.password === password && u.status === "Ativo");
-    if (user) {
-      onLogin(user.id, user.role);
-    } else {
-      setError("Usuário ou senha inválidos.");
-    }
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    const result = await login(username, password);
+    setBusy(false);
+    if (!result.ok) setError(result.message);
   }
 
   return (
@@ -42,10 +39,10 @@ export default function Login({ onLogin }: Props) {
         <div style={{ background: "white", borderRadius: "12px", padding: "32px", boxShadow: "0 25px 60px rgba(0,0,0,0.4)" }}>
           <h2 style={{ fontFamily: "'Work Sans', sans-serif", fontSize: "18px", fontWeight: 700, color: "#0F172A", margin: "0 0 24px" }}>Entrar no sistema</h2>
 
-          {error && (
+          {(error || serverError) && (
             <div className="alert alert-error" style={{ marginBottom: "16px" }}>
               <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
-              {error}
+              {error || serverError}
             </div>
           )}
 
@@ -66,8 +63,8 @@ export default function Login({ onLogin }: Props) {
                 </button>
               </div>
             </div>
-            <button type="submit" className="btn btn-primary" style={{ width: "100%", justifyContent: "center", padding: "11px", fontSize: "15px", marginTop: "4px" }}>
-              Entrar
+            <button type="submit" className="btn btn-primary" disabled={busy} style={{ width: "100%", justifyContent: "center", padding: "11px", fontSize: "15px", marginTop: "4px" }}>
+              {busy ? "Entrando..." : "Entrar"}
             </button>
           </form>
 

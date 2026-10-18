@@ -23,19 +23,19 @@ export default function HistoricoVendas({ userId, role }: Props) {
     setEditSale(s);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editSale) return;
     const quantity = Number(editForm.quantity);
     const discountPercent = Number(editForm.discountPercent);
-    const result = updateSale(editSale.id, { quantity, paymentMethod: editForm.paymentMethod, discountPercent });
+    const result = await updateSale(editSale.id, { quantity, paymentMethod: editForm.paymentMethod, discountPercent });
     if (!result.ok) { alert(result.message); return; }
     setEditSale(null);
   }
 
-  function handleDelete(s: (typeof sales)[number]) {
+  async function handleDelete(s: (typeof sales)[number]) {
     if (role !== "admin") return;
     if (!window.confirm(`Remover a venda de "${s.productName}" (${s.date} ${s.time})? Esta ação não pode ser desfeita.`)) return;
-    const result = deleteSale(s.id);
+    const result = await deleteSale(s.id);
     if (!result.ok) alert(result.message);
   }
 

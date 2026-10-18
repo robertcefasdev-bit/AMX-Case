@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Login from "./components/Login";
+import TrocarSenha from "./components/TrocarSenha";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import VendedorDashboard from "./pages/VendedorDashboard";
@@ -18,66 +19,37 @@ import { DataProvider, useStore } from "./data/store";
 import { ThemeProvider } from "./context/ThemeContext";
 
 type Page = "dashboard" | "vendedor-dashboard" | "estoque" | "cadastro-produto" | "produtos-repor" | "pouca-rotatividade" | "registrar-venda" | "historico-vendas" | "vendedores" | "vendas-vendedor" | "financeiro" | "caixa" | "relatorios";
-interface Session { userId: string; role: "admin" | "vendedor"; }
 
-const SESSION_KEY = "amxcase.session.v1";
-
-function loadSession(): Session | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.userId === "string" && (parsed.role === "admin" || parsed.role === "vendedor")) return parsed;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function saveSession(session: Session | null) {
-  try {
-    if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    else localStorage.removeItem(SESSION_KEY);
-  } catch {
-    /* localStorage indisponível (ex.: navegação anônima) — a sessão simplesmente não persiste */
-  }
+function Splash({ text, action }: { text: string; action?: { label: string; onClick: () => void } }) {
+  return (
+    <div style={{ minHeight: "100vh", background: "#0A0F1E", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "14px", padding: "24px", color: "#94A3B8", fontSize: "14px", textAlign: "center" }}>
+      <div>{text}</div>
+      {action && <button className="btn btn-primary" onClick={action.onClick}>{action.label}</button>}
+    </div>
+  );
 }
 
 function AppContent() {
-  const { users } = useStore();
-  const [session, setSession] = useState<Session | null>(loadSession);
+  const { status, currentUser, dataStatus, dataError, refresh, logout } = useStore();
   const [page, setPage] = useState<Page>("dashboard");
+  const userId = currentUser?.id;
+  const role = currentUser?.role;
 
-  // Se o usuário da sessão salva foi removido ou inativado enquanto estava
-  // logado (em outra aba, por exemplo), desloga automaticamente.
+  // Ao entrar, abre a tela inicial do perfil.
   useEffect(() => {
-    if (!session) return;
-    const stillValid = users.some(u => u.id === session.userId && u.status === "Ativo");
-    if (!stillValid) {
-      setSession(null);
-      saveSession(null);
-    }
-  }, [users, session]);
+    if (role) setPage(role === "admin" ? "dashboard" : "vendedor-dashboard");
+  }, [userId, role]);
 
-  function login(userId: string, role: "admin" | "vendedor") {
-    const next: Session = { userId, role };
-    setSession(next);
-    saveSession(next);
-    setPage(role === "admin" ? "dashboard" : "vendedor-dashboard");
-  }
-
-  function logout() {
-    setSession(null);
-    saveSession(null);
-    setPage("dashboard");
-  }
+  if (status === "loading") return <Splash text="Carregando..." />;
+  if (!currentUser || !userId || !role) return <Login />;
+  if (currentUser.mustChangePassword) return <TrocarSenha />;
+  if (dataStatus === "error") return <Splash text={dataError || "Não foi possível carregar os dados."} action={{ label: "Tentar de novo", onClick: refresh }} />;
+  if (dataStatus !== "ready") return <Splash text="Carregando dados..." />;
 
   const navigate = (p: Page) => setPage(p);
-  if (!session) return <Login onLogin={login} />;
-  const { userId, role } = session;
   const renderPage = () => {
     switch (page) {
-      case "dashboard": return <Dashboard onNavigate={navigate} />;
+      case "dashboard": return role === "admin" ? <Dashboard onNavigate={navigate} /> : <VendedorDashboard userId={userId} onNavigate={navigate} />;
       case "vendedor-dashboard": return <VendedorDashboard userId={userId} onNavigate={navigate} />;
       case "estoque": return <Estoque role={role} onNewProduct={role === "admin" ? () => navigate("cadastro-produto") : undefined} />;
       case "cadastro-produto": return role === "admin" ? <CadastroProduto onBack={() => navigate("estoque")} /> : null;
@@ -92,7 +64,7 @@ function AppContent() {
       case "relatorios": return role === "admin" ? <Relatorios onNavigate={navigate} /> : null;
     }
   };
-  return <Layout page={page} userId={userId} role={role} onNavigate={navigate} onLogout={logout}>{renderPage()}</Layout>;
+  return <Layout page={page} userId={userId} role={role} onNavigate={navigate} onLogout={() => { logout(); setPage("dashboard"); }}>{renderPage()}</Layout>;
 }
 
 export default function App() {

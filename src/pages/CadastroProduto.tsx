@@ -13,6 +13,7 @@ export default function CadastroProduto({ onBack }: Props) {
     excludeFromRotation: false,
   });
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const cost = parseFloat(form.cost) || 0;
   const price = parseFloat(form.price) || 0;
@@ -21,7 +22,7 @@ export default function CadastroProduto({ onBack }: Props) {
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const sku = form.sku.trim();
     if (products.some((p) => p.sku.toLowerCase() === sku.toLowerCase())) {
@@ -33,7 +34,9 @@ export default function CadastroProduto({ onBack }: Props) {
       return;
     }
 
-    addProduct({
+    if (saving) return;
+    setSaving(true);
+    const result = await addProduct({
       name: form.name.trim(),
       sku,
       category: form.category as Category,
@@ -50,6 +53,8 @@ export default function CadastroProduto({ onBack }: Props) {
       lastEntry: form.stockInit ? form.entryDate : undefined,
       excludeFromRotation: form.excludeFromRotation,
     });
+    setSaving(false);
+    if (!result.ok) { window.alert(result.message); return; }
 
     setSaved(true);
     setTimeout(() => {
@@ -187,7 +192,7 @@ export default function CadastroProduto({ onBack }: Props) {
           </div>
 
           <div style={{ display: "flex", gap: "12px" }}>
-            <button type="submit" className="btn btn-primary" style={{ padding: "10px 28px" }}>Salvar Produto</button>
+            <button type="submit" className="btn btn-primary" disabled={saving} style={{ padding: "10px 28px" }}>{saving ? "Salvando..." : "Salvar Produto"}</button>
             <button type="button" className="btn btn-secondary" onClick={onBack}>Cancelar</button>
           </div>
         </div>

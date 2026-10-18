@@ -7,7 +7,6 @@ export interface User {
   id: string;
   name: string;
   username: string;
-  password: string;
   role: UserRole;
   status: "Ativo" | "Inativo";
   createdAt: string;
@@ -73,18 +72,6 @@ export interface StockMovement {
   userName: string;
   notes?: string;
 }
-
-export const users: User[] = [
-  { id: "u1", name: "Elias", username: "Elias", password: "admin", role: "admin", status: "Ativo", createdAt: "2026-01-01" },
-];
-
-export const products: Product[] = [];
-
-const weekdays = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
-
-export const sales: Sale[] = [];
-
-export const stockMovements: StockMovement[] = [];
 
 export const fmt = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

@@ -9,7 +9,7 @@ export default function Vendedores() {
     addUser,
     updateUser,
     deleteUser,
-    discountOverridePassword,
+    hasDiscountPassword,
     setDiscountOverridePassword,
   } = useStore();
 
@@ -23,7 +23,8 @@ export default function Vendedores() {
     password: "",
     status: "Ativo" as "Ativo" | "Inativo",
   });
-  const [discountPassword, setDiscountPassword] = useState(discountOverridePassword);
+  const [discountPassword, setDiscountPassword] = useState("");
+  const [saving, setSaving] = useState(false);
   const [passwordSaved, setPasswordSaved] = useState(false);
 
   const getStats = (id: string) => {
@@ -56,19 +57,24 @@ export default function Vendedores() {
     setForm({
       name: seller.name,
       username: seller.username,
-      password: seller.password,
+      password: "",
       status: seller.status,
     });
     setShowModal(true);
   }
 
-  function saveSeller() {
+  async function saveSeller() {
+    if (saving) return;
     const name = form.name.trim();
     const username = form.username.trim();
     const password = form.password.trim();
 
-    if (!name || !username || !password) {
-      alert("Preencha nome, usuário e senha.");
+    if (!name || !username || (!editing && !password)) {
+      alert(editing ? "Preencha nome e usuário." : "Preencha nome, usuário e senha.");
+      return;
+    }
+    if (password && password.length < 6) {
+      alert("A senha deve ter pelo menos 6 caracteres.");
       return;
     }
 
@@ -80,24 +86,26 @@ export default function Vendedores() {
       return;
     }
 
-    if (editing) {
-      updateUser(editing.id, { name, username, password, status: form.status });
-    } else {
-      addUser({ name, username, password, role: "vendedor", status: form.status });
-    }
+    setSaving(true);
+    const result = editing
+      ? await updateUser(editing.id, { name, username, ...(password ? { password } : {}), status: form.status })
+      : await addUser({ name, username, password, status: form.status });
+    setSaving(false);
+    if (!result.ok) { alert(result.message); return; }
 
     setShowModal(false);
     setEditing(null);
     setForm({ name: "", username: "", password: "", status: "Ativo" });
   }
 
-  function toggleStatus(seller: (typeof users)[number]) {
-    updateUser(seller.id, { status: seller.status === "Ativo" ? "Inativo" : "Ativo" });
+  async function toggleStatus(seller: (typeof users)[number]) {
+    const result = await updateUser(seller.id, { status: seller.status === "Ativo" ? "Inativo" : "Ativo" });
+    if (!result.ok) alert(result.message);
   }
 
-  function handleDelete(seller: (typeof users)[number]) {
+  async function handleDelete(seller: (typeof users)[number]) {
     if (!window.confirm(`Remover "${seller.name}" definitivamente? Esta ação não pode ser desfeita.`)) return;
-    const result = deleteUser(seller.id);
+    const result = await deleteUser(seller.id);
     if (!result.ok) { alert(result.message); return; }
     if (selected?.id === seller.id) setSelected(null);
   }
@@ -126,19 +134,21 @@ export default function Vendedores() {
             <input
               className="input"
               type="password"
-              placeholder="Defina a senha do administrador"
+              placeholder={hasDiscountPassword ? "Digite para trocar a senha atual" : "Defina a senha do administrador"}
               value={discountPassword}
               onChange={(e) => { setDiscountPassword(e.target.value); setPasswordSaved(false); }}
             />
             <button
               className="btn btn-primary btn-sm"
-              onClick={() => {
+              onClick={async () => {
                 const value = discountPassword.trim();
-                if (!value) {
-                  alert("Digite uma senha para autorizar descontos acima de 20%.");
+                if (value.length < 4) {
+                  alert("Digite uma senha de pelo menos 4 caracteres para autorizar descontos acima de 20%.");
                   return;
                 }
-                setDiscountOverridePassword(value);
+                const result = await setDiscountOverridePassword(value);
+                if (!result.ok) { alert(result.message); return; }
+                setDiscountPassword("");
                 setPasswordSaved(true);
               }}
             >
@@ -147,7 +157,7 @@ export default function Vendedores() {
           </div>
         </div>
         {passwordSaved && <div style={{ marginTop: 8, color: "#16A34A", fontSize: 12, fontWeight: 600 }}>Senha salva com sucesso.</div>}
-        {!discountOverridePassword && !passwordSaved && <div style={{ marginTop: 8, color: "#CA8A04", fontSize: 12, fontWeight: 600 }}>Nenhuma senha definida. Descontos acima de 20% estão bloqueados.</div>}
+        {!hasDiscountPassword && !passwordSaved && <div style={{ marginTop: 8, color: "#CA8A04", fontSize: 12, fontWeight: 600 }}>Nenhuma senha definida. Descontos acima de 20% estão bloqueados.</div>}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 14, marginBottom: 24 }}>
@@ -237,9 +247,9 @@ export default function Vendedores() {
             <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
               <label className="field-label">Nome completo<input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex.: Maria Silva" /></label>
               <label className="field-label">Usuário<input className="input" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="Ex.: maria" /></label>
-              <label className="field-label">Senha<input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Senha de acesso" /></label>
+              <label className="field-label">{editing ? "Nova senha (deixe em branco para manter)" : "Senha (mín. 6 caracteres)"}<input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "Não alterar" : "Senha de acesso"} autoComplete="new-password" /></label>
               <label className="field-label">Status<select className="input select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as "Ativo" | "Inativo" })}><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option></select></label>
-              <div style={{ display: "flex", gap: 8, marginTop: 4 }}><button className="btn btn-primary" onClick={saveSeller}>{editing ? "Salvar alterações" : "Cadastrar funcionário"}</button><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button></div>
+              <div style={{ display: "flex", gap: 8, marginTop: 4 }}><button className="btn btn-primary" disabled={saving} onClick={saveSeller}>{saving ? "Salvando..." : editing ? "Salvar alterações" : "Cadastrar funcionário"}</button><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button></div>
             </div>
           </div>
         </div>
