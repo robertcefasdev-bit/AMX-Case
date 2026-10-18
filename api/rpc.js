@@ -122,9 +122,6 @@ function db() {
   _sql = neon(url);
   return _sql;
 }
-// Texto SQL puro (sem valores) no formato que o driver aceita.
-const ddl = (text) => Object.assign([text], { raw: [text] });
-
 const SCHEMA = [
   `create table if not exists users (
     id text primary key,
@@ -219,14 +216,18 @@ function ensureSchema() {
   if (!schemaReady) {
     schemaReady = (async () => {
       const sql = db();
-      await sql.transaction(SCHEMA.map((s) => sql(ddl(s))));
+      // Só cria as tabelas se ainda não existirem (confere o último item criado).
+      const probe = await sql`select to_regclass('public.login_attempts_user_idx')::text as t`;
+      if (!probe[0] || !probe[0].t) {
+        for (const stmt of SCHEMA) await sql.query(stmt, []);
+      }
       // Primeiro acesso: cria o administrador inicial (precisa trocar a senha no primeiro login).
       const [{ n }] = await sql`select count(*) as n from users`;
       if (Number(n) === 0) {
         const hash = await hashPassword("admin");
         try {
           await sql`insert into users (id, name, username, password_hash, role, status, must_change_password, session_version, created_at)
-                    values (${"u-" + randomUUID()}, ${"Elias"}, ${"Elias"}, ${hash}, ${"admin"}, ${"Ativo"}, ${true}, ${1}, ${nowParts().iso})`;
+                    values (${"u-" + randomUUID()}, ${"Elias"}, ${"Elias"}, ${hash}, ${"admin"}, ${"Ativo"}, true, 1, ${nowParts().iso})`;
         } catch (e) {
           if (!e || e.code !== "23505") throw e; // outra instância já criou
         }
@@ -813,7 +814,13 @@ function checkOrigin(req) {
   if (host !== String(req.headers.host || "")) throw fail(403, "FORBIDDEN", "Origem não permitida.");
 }
 
+function errorRef(e) {
+  const name = e && e.name ? e.name : "Error";
+  return e && e.code ? `${name}/${e.code}` : name;
+}
+
 export default async function handler(req, res) {
+  let actionName = "";
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
   try {
@@ -823,6 +830,7 @@ export default async function handler(req, res) {
     }
     checkOrigin(req);
     const body = parseBody(req);
+    actionName = typeof body.action === "string" ? body.action : "";
     const def = typeof body.action === "string" && Object.prototype.hasOwnProperty.call(ACTIONS, body.action) ? ACTIONS[body.action] : null;
     if (!def) throw bad("Ação desconhecida.");
     await ensureSchema();
@@ -840,7 +848,10 @@ export default async function handler(req, res) {
       send(res, e.status, { ok: false, error: { code: e.code, message: e.message } });
       return;
     }
-    console.error("[amx-api] erro inesperado:", e && e.message ? e.message : e);
-    send(res, 500, { ok: false, error: { code: "INTERNAL", message: "Erro interno do servidor. Tente novamente." } });
+    const stack = e && e.stack ? String(e.stack).split("\n").slice(0, 5).join(" | ") : "";
+    console.error("[amx-api] erro inesperado em", actionName, "|", errorRef(e), "|", e && e.message ? e.message : e, "|", stack);
+    // Na tela só vai uma referência curta. Com API_DEBUG=1 (variável na Vercel) vai também a mensagem, para diagnóstico.
+    const detail = process.env.API_DEBUG === "1" ? ` ${String(e && e.message ? e.message : e).slice(0, 300)}` : "";
+    send(res, 500, { ok: false, error: { code: "INTERNAL", message: `Erro interno do servidor (ref: ${errorRef(e)}).${detail}` } });
   }
 }
