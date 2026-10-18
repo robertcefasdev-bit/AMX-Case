@@ -21,6 +21,7 @@
 - A chave do banco (`DATABASE_URL`) fica só no servidor.
 
 ## Observações
+- As tabelas do sistema começam com `amx_` (amx_users, amx_products, amx_sales...), então não mexem em tabelas de outros projetos que estejam no mesmo banco Neon.
 - Só funciona no site publicado na Vercel (não no preview do editor).
 - O deploy usa `pnpm install --no-frozen-lockfile` (veja `vercel.json`) para instalar a nova dependência.
 - Região: se o Neon estiver em São Paulo, configure a região das funções da Vercel para São Paulo (gru1) para ficar mais rápido.

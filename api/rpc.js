@@ -123,7 +123,7 @@ function db() {
   return _sql;
 }
 const SCHEMA = [
-  `create table if not exists users (
+  `create table if not exists amx_users (
     id text primary key,
     name text not null,
     username text not null,
@@ -135,8 +135,8 @@ const SCHEMA = [
     created_at text not null,
     created_ts timestamptz not null default now()
   )`,
-  `create unique index if not exists users_username_key on users (lower(username))`,
-  `create table if not exists products (
+  `create unique index if not exists amx_users_username_key on amx_users (lower(username))`,
+  `create table if not exists amx_products (
     id text primary key,
     name text not null,
     sku text not null,
@@ -159,15 +159,15 @@ const SCHEMA = [
     exclude_from_rotation boolean not null default false,
     created_ts timestamptz not null default now()
   )`,
-  `create unique index if not exists products_sku_key on products (lower(sku))`,
-  `create table if not exists sales (
+  `create unique index if not exists amx_products_sku_key on amx_products (lower(sku))`,
+  `create table if not exists amx_sales (
     id text primary key,
     created_ts timestamptz not null default now(),
     sale_date text not null,
     sale_time text not null,
-    seller_id text not null references users(id) on delete restrict,
+    seller_id text not null references amx_users(id) on delete restrict,
     seller_name text not null,
-    product_id text not null references products(id) on delete restrict,
+    product_id text not null references amx_products(id) on delete restrict,
     product_name text not null,
     product_sku text not null,
     category text not null,
@@ -180,15 +180,15 @@ const SCHEMA = [
     payment_method text not null,
     status text not null default 'Concluída'
   )`,
-  `create index if not exists sales_seller_idx on sales (seller_id)`,
-  `create index if not exists sales_date_idx on sales (sale_date)`,
-  `create table if not exists stock_movements (
+  `create index if not exists amx_sales_seller_idx on amx_sales (seller_id)`,
+  `create index if not exists amx_sales_date_idx on amx_sales (sale_date)`,
+  `create table if not exists amx_stock_movements (
     id text primary key,
     created_ts timestamptz not null default now(),
     move_date text not null,
     move_time text not null,
     type text not null,
-    product_id text not null references products(id) on delete cascade,
+    product_id text not null references amx_products(id) on delete cascade,
     product_name text not null,
     quantity integer not null,
     value numeric(12,2) not null default 0,
@@ -197,19 +197,29 @@ const SCHEMA = [
     notes text,
     sale_id text
   )`,
-  `create index if not exists movements_sale_idx on stock_movements (sale_id)`,
-  `create table if not exists settings (
+  `create index if not exists amx_movements_sale_idx on amx_stock_movements (sale_id)`,
+  `create table if not exists amx_settings (
     key text primary key,
     value text not null
   )`,
-  `create table if not exists login_attempts (
+  `create table if not exists amx_login_attempts (
     id text primary key,
     username text not null,
     ip text not null default '',
     created_ts text not null
   )`,
-  `create index if not exists login_attempts_user_idx on login_attempts (username, created_ts)`,
+  `create index if not exists amx_login_attempts_user_idx on amx_login_attempts (username, created_ts)`,
 ];
+
+// Marca em qual etapa um erro aconteceu (aparece na referência do erro, para diagnóstico).
+async function at(stage, promise) {
+  try {
+    return await promise;
+  } catch (e) {
+    if (e && typeof e === "object" && !e.stage) e.stage = stage;
+    throw e;
+  }
+}
 
 let schemaReady = null;
 function ensureSchema() {
@@ -217,17 +227,17 @@ function ensureSchema() {
     schemaReady = (async () => {
       const sql = db();
       // Só cria as tabelas se ainda não existirem (confere o último item criado).
-      const probe = await sql`select to_regclass('public.login_attempts_user_idx')::text as t`;
+      const probe = await at("verificar", sql`select to_regclass('public.amx_login_attempts_user_idx')::text as t`);
       if (!probe[0] || !probe[0].t) {
-        for (const stmt of SCHEMA) await sql.query(stmt, []);
+        for (let i = 0; i < SCHEMA.length; i++) await at(`criar-${i + 1}`, sql.query(SCHEMA[i], []));
       }
       // Primeiro acesso: cria o administrador inicial (precisa trocar a senha no primeiro login).
-      const [{ n }] = await sql`select count(*) as n from users`;
+      const [{ n }] = await at("contar-usuarios", sql`select count(*) as n from amx_users`);
       if (Number(n) === 0) {
         const hash = await hashPassword("admin");
         try {
-          await sql`insert into users (id, name, username, password_hash, role, status, must_change_password, session_version, created_at)
-                    values (${"u-" + randomUUID()}, ${"Elias"}, ${"Elias"}, ${hash}, ${"admin"}, ${"Ativo"}, true, 1, ${nowParts().iso})`;
+          await at("criar-admin", sql`insert into amx_users (id, name, username, password_hash, role, status, must_change_password, session_version, created_at)
+                    values (${"u-" + randomUUID()}, ${"Elias"}, ${"Elias"}, ${hash}, ${"admin"}, ${"Ativo"}, true, 1, ${nowParts().iso})`);
         } catch (e) {
           if (!e || e.code !== "23505") throw e; // outra instância já criou
         }
@@ -330,20 +340,20 @@ function clientIp(req) {
 // Limite de tentativas (login e senha de desconto): bloqueia por 15 minutos.
 async function attemptsInWindow(sql, key) {
   const cutoff = new Date(Date.now() - ATTEMPT_WINDOW_MIN * 60000).toISOString();
-  const [{ n }] = await sql`select count(*) as n from login_attempts where username = ${key} and created_ts > ${cutoff}`;
+  const [{ n }] = await sql`select count(*) as n from amx_login_attempts where username = ${key} and created_ts > ${cutoff}`;
   return Number(n);
 }
 async function recordAttempt(sql, key, ip) {
-  await sql`insert into login_attempts (id, username, ip, created_ts) values (${randomUUID()}, ${key}, ${ip}, ${new Date().toISOString()})`;
+  await sql`insert into amx_login_attempts (id, username, ip, created_ts) values (${randomUUID()}, ${key}, ${ip}, ${new Date().toISOString()})`;
 }
 async function clearAttempts(sql, key) {
-  await sql`delete from login_attempts where username = ${key}`;
+  await sql`delete from amx_login_attempts where username = ${key}`;
 }
 
 async function authenticate(ctx) {
   const payload = verifyToken(readCookie(ctx.req, COOKIE));
   if (!payload) return null;
-  const rows = await ctx.sql`select * from users where id = ${payload.u}`;
+  const rows = await ctx.sql`select * from amx_users where id = ${payload.u}`;
   const u = rows[0];
   if (!u || u.status !== "Ativo" || Number(u.session_version) !== Number(payload.v)) return null;
   return u;
@@ -381,7 +391,7 @@ const mapMovement = (r) => ({
 });
 
 async function discountHash(sql) {
-  const rows = await sql`select value from settings where key = ${"discount_password_hash"}`;
+  const rows = await sql`select value from amx_settings where key = ${"discount_password_hash"}`;
   return rows[0] ? rows[0].value : "";
 }
 
@@ -394,8 +404,8 @@ async function actLogin(ctx, p) {
   if (!pw || pw.length > 200) throw bad("Informe usuário e senha.");
   const ip = clientIp(req);
   const key = `login:${uname}`;
-  if ((await attemptsInWindow(sql, key)) >= 8) throw fail(429, "TOO_MANY", "Muitas tentativas. Aguarde alguns minutos e tente de novo.");
-  const rows = await sql`select * from users where lower(username) = ${uname}`;
+  if ((await at("login-tentativas", attemptsInWindow(sql, key))) >= 8) throw fail(429, "TOO_MANY", "Muitas tentativas. Aguarde alguns minutos e tente de novo.");
+  const rows = await at("login-usuario", sql`select * from amx_users where lower(username) = ${uname}`);
   const u = rows[0];
   const ok = await verifyPassword(pw, u ? u.password_hash : await dummyHash());
   if (!u || !ok || u.status !== "Ativo") {
@@ -430,7 +440,7 @@ async function actChangePassword(ctx, p) {
   if (next.toLowerCase() === String(user.username).toLowerCase()) throw bad("A senha não pode ser igual ao usuário.");
   const hash = await hashPassword(next);
   const version = Number(user.session_version) + 1;
-  await runTx(sql, [sql`update users set password_hash = ${hash}, must_change_password = ${false}, session_version = ${version} where id = ${user.id}`]);
+  await runTx(sql, [sql`update amx_users set password_hash = ${hash}, must_change_password = ${false}, session_version = ${version} where id = ${user.id}`]);
   await clearAttempts(sql, key);
   issueSession(req, res, { id: user.id, session_version: version });
   return {};
@@ -445,18 +455,18 @@ async function actBootstrap(ctx) {
   let productRows, saleRows, userRows, moveRows, settingRows;
   if (admin) {
     [productRows, saleRows, userRows, moveRows, settingRows] = await sql.transaction([
-      sql`select * from products order by lower(name)`,
-      sql`select * from sales order by created_ts desc, id desc limit 5000`,
-      sql`select * from users order by created_ts, id`,
-      sql`select * from stock_movements order by created_ts desc, id desc limit 1000`,
-      sql`select value from settings where key = ${"discount_password_hash"}`,
+      sql`select * from amx_products order by lower(name)`,
+      sql`select * from amx_sales order by created_ts desc, id desc limit 5000`,
+      sql`select * from amx_users order by created_ts, id`,
+      sql`select * from amx_stock_movements order by created_ts desc, id desc limit 1000`,
+      sql`select value from amx_settings where key = ${"discount_password_hash"}`,
     ]);
   } else {
     [productRows, saleRows, userRows, settingRows] = await sql.transaction([
-      sql`select * from products where status = ${"Ativo"} order by lower(name)`,
-      sql`select * from sales where seller_id = ${user.id} order by created_ts desc, id desc limit 2000`,
-      sql`select * from users where id = ${user.id}`,
-      sql`select value from settings where key = ${"discount_password_hash"}`,
+      sql`select * from amx_products where status = ${"Ativo"} order by lower(name)`,
+      sql`select * from amx_sales where seller_id = ${user.id} order by created_ts desc, id desc limit 2000`,
+      sql`select * from amx_users where id = ${user.id}`,
+      sql`select value from amx_settings where key = ${"discount_password_hash"}`,
     ]);
     moveRows = [];
   }
@@ -498,12 +508,12 @@ async function actAddProduct(ctx, p) {
   const entryDate = p.entryDate ? isoDate(p.entryDate, "Data de entrada") : nowParts().iso;
   const pid = `p-${randomUUID()}`;
   const queries = [
-    sql`insert into products (id, name, sku, category, brand, compatibility, description, cost, price, stock, min_stock, ideal_stock, supplier, entry_date, last_entry, last_sale, total_bought, total_sold, status, exclude_from_rotation)
+    sql`insert into amx_products (id, name, sku, category, brand, compatibility, description, cost, price, stock, min_stock, ideal_stock, supplier, entry_date, last_entry, last_sale, total_bought, total_sold, status, exclude_from_rotation)
         values (${pid}, ${f.name}, ${sku}, ${f.category}, ${f.brand}, ${f.compatibility}, ${f.description}, ${f.cost}, ${f.price}, ${stock}, ${f.minStock}, ${f.idealStock}, ${f.supplier}, ${entryDate}, ${stock > 0 ? entryDate : null}, ${null}, ${stock}, ${0}, ${"Ativo"}, ${f.exclude})`,
   ];
   if (stock > 0) {
     const n = nowParts();
-    queries.push(sql`insert into stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
+    queries.push(sql`insert into amx_stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
         values (${`m-${randomUUID()}`}, ${new Date().toISOString()}, ${entryDate}, ${n.time}, ${"Entrada"}, ${pid}, ${f.name}, ${stock}, ${round2(f.cost * stock)}, ${user.id}, ${user.name}, ${"Estoque inicial"}, ${null})`);
   }
   await runTx(sql, queries, { unique: "Já existe um produto cadastrado com este SKU." });
@@ -514,10 +524,10 @@ async function actUpdateProduct(ctx, p) {
   const { sql } = ctx;
   const pid = idOf(p.id);
   const patch = p.patch && typeof p.patch === "object" ? p.patch : {};
-  const [cur] = await sql`select * from products where id = ${pid}`;
+  const [cur] = await sql`select * from amx_products where id = ${pid}`;
   if (!cur) throw fail(404, "NOT_FOUND", "Produto não encontrado.");
   const f = productFields(patch, cur);
-  await runTx(sql, [sql`update products set name = ${f.name}, category = ${f.category}, brand = ${f.brand}, compatibility = ${f.compatibility}, description = ${f.description},
+  await runTx(sql, [sql`update amx_products set name = ${f.name}, category = ${f.category}, brand = ${f.brand}, compatibility = ${f.compatibility}, description = ${f.description},
       cost = ${f.cost}, price = ${f.price}, min_stock = ${f.minStock}, ideal_stock = ${f.idealStock}, supplier = ${f.supplier}, status = ${f.status}, exclude_from_rotation = ${f.exclude}
       where id = ${pid}`]);
   return {};
@@ -526,9 +536,9 @@ async function actUpdateProduct(ctx, p) {
 async function actDeleteProduct(ctx, p) {
   const { sql } = ctx;
   const pid = idOf(p.id);
-  const [{ n }] = await sql`select count(*) as n from sales where product_id = ${pid}`;
+  const [{ n }] = await sql`select count(*) as n from amx_sales where product_id = ${pid}`;
   if (Number(n) > 0) throw fail(409, "IN_USE", "Este produto possui vendas registradas e não pode ser excluído. Você pode inativá-lo.");
-  await runTx(sql, [sql`delete from products where id = ${pid}`]);
+  await runTx(sql, [sql`delete from amx_products where id = ${pid}`]);
   return {};
 }
 
@@ -537,12 +547,12 @@ async function actAddStock(ctx, p) {
   const pid = idOf(p.id);
   const qty = int(p.quantity, { min: 1, max: 100000, field: "Quantidade" });
   const entry = p.entryDate ? isoDate(p.entryDate, "Data de entrada") : nowParts().iso;
-  const [cur] = await sql`select * from products where id = ${pid}`;
+  const [cur] = await sql`select * from amx_products where id = ${pid}`;
   if (!cur) throw fail(404, "NOT_FOUND", "Produto não encontrado.");
   const n = nowParts();
   await runTx(sql, [
-    sql`update products set stock = stock + ${qty}, total_bought = total_bought + ${qty}, last_entry = ${entry}, entry_date = coalesce(entry_date, ${entry}) where id = ${pid}`,
-    sql`insert into stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
+    sql`update amx_products set stock = stock + ${qty}, total_bought = total_bought + ${qty}, last_entry = ${entry}, entry_date = coalesce(entry_date, ${entry}) where id = ${pid}`,
+    sql`insert into amx_stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
         values (${`m-${randomUUID()}`}, ${new Date().toISOString()}, ${entry}, ${n.time}, ${"Entrada"}, ${pid}, ${cur.name}, ${qty}, ${round2(num(cur.cost) * qty)}, ${user.id}, ${user.name}, ${null}, ${null})`,
   ]);
   return {};
@@ -565,7 +575,7 @@ async function actRegisterSale(ctx, p) {
 
   // Vendedor só vende em nome próprio; admin pode escolher o vendedor.
   const sellerId = user.role === "admin" && p.sellerId ? idOf(p.sellerId) : user.id;
-  const [seller] = await sql`select * from users where id = ${sellerId}`;
+  const [seller] = await sql`select * from amx_users where id = ${sellerId}`;
   if (!seller || seller.status !== "Ativo") throw fail(404, "NOT_FOUND", "Vendedor não encontrado ou inativo.");
 
   if (discountPercent > DISCOUNT_LIMIT) {
@@ -582,7 +592,7 @@ async function actRegisterSale(ctx, p) {
   }
 
   const ids = [...wanted.keys()];
-  const found = await sql.transaction(ids.map((pid) => sql`select * from products where id = ${pid}`));
+  const found = await sql.transaction(ids.map((pid) => sql`select * from amx_products where id = ${pid}`));
   const items = ids.map((pid, i) => {
     const prod = found[i][0];
     if (!prod || prod.status !== "Ativo") throw fail(404, "NOT_FOUND", "Produto não encontrado.");
@@ -611,10 +621,10 @@ async function actRegisterSale(ctx, p) {
   const queries = [];
   for (const s of saleRows) {
     // O banco recusa estoque negativo (check stock >= 0): se outra venda acabou de levar o estoque, tudo é desfeito.
-    queries.push(sql`update products set stock = stock - ${s.quantity}, total_sold = total_sold + ${s.quantity}, last_sale = ${now.iso} where id = ${s.product_id}`);
-    queries.push(sql`insert into sales (id, created_ts, sale_date, sale_time, seller_id, seller_name, product_id, product_name, product_sku, category, quantity, original_price, discount, final_price, cost, profit, payment_method, status)
+    queries.push(sql`update amx_products set stock = stock - ${s.quantity}, total_sold = total_sold + ${s.quantity}, last_sale = ${now.iso} where id = ${s.product_id}`);
+    queries.push(sql`insert into amx_sales (id, created_ts, sale_date, sale_time, seller_id, seller_name, product_id, product_name, product_sku, category, quantity, original_price, discount, final_price, cost, profit, payment_method, status)
         values (${s.id}, ${createdTs}, ${s.sale_date}, ${s.sale_time}, ${s.seller_id}, ${s.seller_name}, ${s.product_id}, ${s.product_name}, ${s.product_sku}, ${s.category}, ${s.quantity}, ${s.original_price}, ${s.discount}, ${s.final_price}, ${s.cost}, ${s.profit}, ${s.payment_method}, ${s.status})`);
-    queries.push(sql`insert into stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
+    queries.push(sql`insert into amx_stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
         values (${`m-${randomUUID()}`}, ${createdTs}, ${now.iso}, ${now.time}, ${"Saída"}, ${s.product_id}, ${s.product_name}, ${s.quantity}, ${s.final_price}, ${seller.id}, ${seller.name}, ${`Venda ${s.id}`}, ${s.id})`);
   }
   await runTx(sql, queries, { check: "Estoque insuficiente: outra venda acabou de usar o estoque. Atualize a tela e tente de novo." });
@@ -622,7 +632,7 @@ async function actRegisterSale(ctx, p) {
 }
 
 async function loadSale(sql, sid) {
-  const [sale] = await sql`select * from sales where id = ${sid}`;
+  const [sale] = await sql`select * from amx_sales where id = ${sid}`;
   if (!sale) throw fail(404, "NOT_FOUND", "Venda não encontrada.");
   return sale;
 }
@@ -633,7 +643,7 @@ async function actUpdateSale(ctx, p) {
   const patch = p.patch && typeof p.patch === "object" ? p.patch : {};
   const sale = await loadSale(sql, sid);
   if (sale.status !== "Concluída") throw fail(409, "BAD_STATE", "Apenas vendas concluídas podem ser editadas.");
-  const [prod] = await sql`select * from products where id = ${sale.product_id}`;
+  const [prod] = await sql`select * from amx_products where id = ${sale.product_id}`;
   if (!prod) throw fail(404, "NOT_FOUND", "Produto da venda não encontrado.");
   const oldQty = num(sale.quantity);
   const newQty = patch.quantity !== undefined ? int(patch.quantity, { min: 1, max: 100000, field: "Quantidade" }) : oldQty;
@@ -654,8 +664,8 @@ async function actUpdateSale(ctx, p) {
   const cost = round2(num(prod.cost) * newQty);
   const profit = round2(finalPrice - cost);
   await runTx(sql, [
-    sql`update products set stock = stock - ${delta}, total_sold = case when total_sold + ${delta} < 0 then 0 else total_sold + ${delta} end where id = ${prod.id}`,
-    sql`update sales set quantity = ${newQty}, discount = ${discount}, final_price = ${finalPrice}, cost = ${cost}, profit = ${profit}, payment_method = ${method} where id = ${sid}`,
+    sql`update amx_products set stock = stock - ${delta}, total_sold = case when total_sold + ${delta} < 0 then 0 else total_sold + ${delta} end where id = ${prod.id}`,
+    sql`update amx_sales set quantity = ${newQty}, discount = ${discount}, final_price = ${finalPrice}, cost = ${cost}, profit = ${profit}, payment_method = ${method} where id = ${sid}`,
   ]);
   return {};
 }
@@ -667,10 +677,10 @@ async function actDeleteSale(ctx, p) {
   const q = num(sale.quantity);
   const queries = [];
   if (sale.status === "Concluída") {
-    queries.push(sql`update products set stock = stock + ${q}, total_sold = case when total_sold - ${q} < 0 then 0 else total_sold - ${q} end where id = ${sale.product_id}`);
+    queries.push(sql`update amx_products set stock = stock + ${q}, total_sold = case when total_sold - ${q} < 0 then 0 else total_sold - ${q} end where id = ${sale.product_id}`);
   }
-  queries.push(sql`delete from stock_movements where sale_id = ${sid}`);
-  queries.push(sql`delete from sales where id = ${sid}`);
+  queries.push(sql`delete from amx_stock_movements where sale_id = ${sid}`);
+  queries.push(sql`delete from amx_sales where id = ${sid}`);
   await runTx(sql, queries);
   return {};
 }
@@ -683,9 +693,9 @@ async function actCancelSale(ctx, p) {
   const q = num(sale.quantity);
   const n = nowParts();
   await runTx(sql, [
-    sql`update sales set status = ${"Cancelada"} where id = ${sid}`,
-    sql`update products set stock = stock + ${q}, total_sold = case when total_sold - ${q} < 0 then 0 else total_sold - ${q} end where id = ${sale.product_id}`,
-    sql`insert into stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
+    sql`update amx_sales set status = ${"Cancelada"} where id = ${sid}`,
+    sql`update amx_products set stock = stock + ${q}, total_sold = case when total_sold - ${q} < 0 then 0 else total_sold - ${q} end where id = ${sale.product_id}`,
+    sql`insert into amx_stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
         values (${`m-${randomUUID()}`}, ${new Date().toISOString()}, ${n.iso}, ${n.time}, ${"Estorno"}, ${sale.product_id}, ${sale.product_name}, ${q}, ${num(sale.final_price)}, ${user.id}, ${user.name}, ${`Estorno da venda ${sid}`}, ${null})`,
   ]);
   return {};
@@ -694,7 +704,7 @@ async function actCancelSale(ctx, p) {
 // ───────────────────────── ações: usuários e configurações (admin) ─────────────────────────
 
 async function otherActiveAdmins(sql, exceptId) {
-  const [{ n }] = await sql`select count(*) as n from users where role = ${"admin"} and status = ${"Ativo"} and id <> ${exceptId}`;
+  const [{ n }] = await sql`select count(*) as n from amx_users where role = ${"admin"} and status = ${"Ativo"} and id <> ${exceptId}`;
   return Number(n);
 }
 
@@ -706,7 +716,7 @@ async function actAddUser(ctx, p) {
   const role = p.role === undefined ? "vendedor" : oneOf(p.role, ["admin", "vendedor"], "Perfil");
   const status = p.status === undefined ? "Ativo" : oneOf(p.status, ["Ativo", "Inativo"], "Status");
   const uid = `u-${randomUUID()}`;
-  await runTx(sql, [sql`insert into users (id, name, username, password_hash, role, status, must_change_password, session_version, created_at)
+  await runTx(sql, [sql`insert into amx_users (id, name, username, password_hash, role, status, must_change_password, session_version, created_at)
       values (${uid}, ${name}, ${uname}, ${hash}, ${role}, ${status}, ${false}, ${1}, ${nowParts().iso})`], { unique: "Este usuário já está cadastrado." });
   return { id: uid };
 }
@@ -715,7 +725,7 @@ async function actUpdateUser(ctx, p) {
   const { sql, user } = ctx;
   const uid = idOf(p.id);
   const patch = p.patch && typeof p.patch === "object" ? p.patch : {};
-  const [cur] = await sql`select * from users where id = ${uid}`;
+  const [cur] = await sql`select * from amx_users where id = ${uid}`;
   if (!cur) throw fail(404, "NOT_FOUND", "Usuário não encontrado.");
   const name = patch.name !== undefined ? str(patch.name, { min: 1, max: 80, field: "Nome" }) : cur.name;
   const uname = patch.username !== undefined ? username(patch.username) : cur.username;
@@ -730,7 +740,7 @@ async function actUpdateUser(ctx, p) {
     hash = await hashPassword(password(patch.password));
     version += 1; // derruba as sessões abertas desse usuário
   }
-  await runTx(sql, [sql`update users set name = ${name}, username = ${uname}, status = ${status}, password_hash = ${hash}, session_version = ${version},
+  await runTx(sql, [sql`update amx_users set name = ${name}, username = ${uname}, status = ${status}, password_hash = ${hash}, session_version = ${version},
       must_change_password = ${hash === cur.password_hash ? !!cur.must_change_password : false} where id = ${uid}`], { unique: "Este usuário já está cadastrado." });
   return {};
 }
@@ -739,14 +749,14 @@ async function actDeleteUser(ctx, p) {
   const { sql, user } = ctx;
   const uid = idOf(p.id);
   if (uid === user.id) throw fail(409, "FORBIDDEN", "Você não pode remover a sua própria conta.");
-  const [cur] = await sql`select * from users where id = ${uid}`;
+  const [cur] = await sql`select * from amx_users where id = ${uid}`;
   if (!cur) throw fail(404, "NOT_FOUND", "Usuário não encontrado.");
   if (cur.role === "admin" && cur.status === "Ativo" && (await otherActiveAdmins(sql, uid)) < 1) {
     throw fail(409, "FORBIDDEN", "É preciso manter pelo menos um administrador ativo.");
   }
-  const [{ n }] = await sql`select count(*) as n from sales where seller_id = ${uid}`;
+  const [{ n }] = await sql`select count(*) as n from amx_sales where seller_id = ${uid}`;
   if (Number(n) > 0) throw fail(409, "IN_USE", "Este vendedor possui vendas registradas e não pode ser excluído. Você pode inativá-lo.");
-  await runTx(sql, [sql`delete from users where id = ${uid}`]);
+  await runTx(sql, [sql`delete from amx_users where id = ${uid}`]);
   return {};
 }
 
@@ -755,7 +765,7 @@ async function actSetDiscountPassword(ctx, p) {
   const pw = typeof p.password === "string" ? p.password : "";
   if (pw.length < 4 || pw.length > 100) throw bad("A senha de desconto deve ter pelo menos 4 caracteres.");
   const hash = await hashPassword(pw);
-  await runTx(sql, [sql`insert into settings (key, value) values (${"discount_password_hash"}, ${hash}) on conflict (key) do update set value = excluded.value`]);
+  await runTx(sql, [sql`insert into amx_settings (key, value) values (${"discount_password_hash"}, ${hash}) on conflict (key) do update set value = excluded.value`]);
   return {};
 }
 
@@ -816,7 +826,11 @@ function checkOrigin(req) {
 
 function errorRef(e) {
   const name = e && e.name ? e.name : "Error";
-  return e && e.code ? `${name}/${e.code}` : name;
+  let ref = e && e.code ? `${name}/${e.code}` : name;
+  if (e && e.stage) ref += ` etapa=${e.stage}`;
+  if (e && e.table) ref += ` tabela=${e.table}`;
+  if (e && e.routine) ref += ` rotina=${e.routine}`;
+  return ref;
 }
 
 export default async function handler(req, res) {
