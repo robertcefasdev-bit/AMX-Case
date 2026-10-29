@@ -499,14 +499,25 @@ function productFields(p, cur) {
   return { name, category, brand, compatibility, description, cost, price, minStock, idealStock, supplier, status, exclude };
 }
 
+// Código interno para produtos sem código de barras: SC-XXXXX (sem letras/números que se confundem).
+function autoSku() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(5);
+  let out = "SC-";
+  for (let i = 0; i < 5; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
+
 async function actAddProduct(ctx, p) {
   const { sql, user } = ctx;
   if (p.name === undefined) throw bad("Nome do produto é obrigatório.");
   const f = productFields(p, { name: "", category: "Capa", brand: "", compatibility: "", description: "", cost: 0, price: 0, min_stock: 0, ideal_stock: 0, supplier: "", status: "Ativo", exclude_from_rotation: false });
-  const sku = str(p.sku, { min: 1, max: 60, field: "Código / SKU" });
+  // O código (SKU / código de barras) é opcional: sem ele, o sistema cria um código interno automático.
+  const given = p.sku === undefined || p.sku === null ? "" : str(p.sku, { max: 60, field: "Código / SKU" });
   const stock = p.stock === undefined || p.stock === "" ? 0 : int(p.stock, { field: "Estoque inicial" });
   const entryDate = p.entryDate ? isoDate(p.entryDate, "Data de entrada") : nowParts().iso;
   const pid = `p-${randomUUID()}`;
+  const build = (sku) => {
   const queries = [
     sql`insert into amx_products (id, name, sku, category, brand, compatibility, description, cost, price, stock, min_stock, ideal_stock, supplier, entry_date, last_entry, last_sale, total_bought, total_sold, status, exclude_from_rotation)
         values (${pid}, ${f.name}, ${sku}, ${f.category}, ${f.brand}, ${f.compatibility}, ${f.description}, ${f.cost}, ${f.price}, ${stock}, ${f.minStock}, ${f.idealStock}, ${f.supplier}, ${entryDate}, ${stock > 0 ? entryDate : null}, ${null}, ${stock}, ${0}, ${"Ativo"}, ${f.exclude})`,
@@ -516,8 +527,18 @@ async function actAddProduct(ctx, p) {
     queries.push(sql`insert into amx_stock_movements (id, created_ts, move_date, move_time, type, product_id, product_name, quantity, value, user_id, user_name, notes, sale_id)
         values (${`m-${randomUUID()}`}, ${new Date().toISOString()}, ${entryDate}, ${n.time}, ${"Entrada"}, ${pid}, ${f.name}, ${stock}, ${round2(f.cost * stock)}, ${user.id}, ${user.name}, ${"Estoque inicial"}, ${null})`);
   }
-  await runTx(sql, queries, { unique: "Já existe um produto cadastrado com este SKU." });
-  return { id: pid };
+  return queries;
+  };
+  for (let attempt = 0; ; attempt++) {
+    const sku = given || autoSku();
+    try {
+      await runTx(sql, build(sku), { unique: "Já existe um produto cadastrado com este SKU." });
+      return { id: pid, sku };
+    } catch (e) {
+      // Código automático repetido (raro): tenta outro. Código digitado repetido: avisa.
+      if (given || !(e instanceof HttpError) || e.code !== "DUPLICATE" || attempt >= 4) throw e;
+    }
+  }
 }
 
 async function actUpdateProduct(ctx, p) {
@@ -527,9 +548,10 @@ async function actUpdateProduct(ctx, p) {
   const [cur] = await sql`select * from amx_products where id = ${pid}`;
   if (!cur) throw fail(404, "NOT_FOUND", "Produto não encontrado.");
   const f = productFields(patch, cur);
-  await runTx(sql, [sql`update amx_products set name = ${f.name}, category = ${f.category}, brand = ${f.brand}, compatibility = ${f.compatibility}, description = ${f.description},
+  const sku = patch.sku !== undefined && String(patch.sku).trim() !== "" ? str(patch.sku, { min: 1, max: 60, field: "Código / SKU" }) : cur.sku;
+  await runTx(sql, [sql`update amx_products set sku = ${sku}, name = ${f.name}, category = ${f.category}, brand = ${f.brand}, compatibility = ${f.compatibility}, description = ${f.description},
       cost = ${f.cost}, price = ${f.price}, min_stock = ${f.minStock}, ideal_stock = ${f.idealStock}, supplier = ${f.supplier}, status = ${f.status}, exclude_from_rotation = ${f.exclude}
-      where id = ${pid}`]);
+      where id = ${pid}`], { unique: "Já existe um produto cadastrado com este SKU." });
   return {};
 }
 

@@ -30,7 +30,7 @@ export default function Estoque({ role, onNewProduct }: Props) {
   const [entryProduct, setEntryProduct] = useState<Product | null>(null);
   const [entryQty, setEntryQty] = useState("");
   const [editProduct, setEditProduct] = useState<Product | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", category: "", brand: "", compatibility: "", cost: "", price: "", minStock: "", idealStock: "", supplier: "", excludeFromRotation: false });
+  const [editForm, setEditForm] = useState({ sku: "", name: "", category: "", brand: "", compatibility: "", cost: "", price: "", minStock: "", idealStock: "", supplier: "", excludeFromRotation: false });
 
   const filtered = useMemo(() => products.filter((p) => {
     if (p.status !== "Ativo") return false;
@@ -61,7 +61,7 @@ export default function Estoque({ role, onNewProduct }: Props) {
   function openEdit(p: Product) {
     if (role !== "admin") return;
     setEditForm({
-      name: p.name, category: p.category, brand: p.brand, compatibility: p.compatibility,
+      sku: p.sku, name: p.name, category: p.category, brand: p.brand, compatibility: p.compatibility,
       cost: String(p.cost), price: String(p.price), minStock: String(p.minStock), idealStock: String(p.idealStock),
       supplier: p.supplier || "", excludeFromRotation: !!p.excludeFromRotation,
     });
@@ -77,7 +77,9 @@ export default function Estoque({ role, onNewProduct }: Props) {
     if (!editForm.name.trim()) { alert("Informe o nome do produto."); return; }
     if (!Number.isFinite(cost) || cost < 0 || !Number.isFinite(price) || price < 0) { alert("Custo e preço devem ser números válidos."); return; }
     if (!Number.isInteger(minStock) || !Number.isInteger(idealStock) || minStock < 0 || idealStock < minStock) { alert("Verifique o estoque mínimo e ideal (ideal não pode ser menor que o mínimo)."); return; }
+    const newSku = editForm.sku.trim();
     const result = await updateProduct(editProduct.id, {
+      ...(newSku && newSku !== editProduct.sku ? { sku: newSku } : {}),
       name: editForm.name.trim(), category: editForm.category as Product["category"], brand: editForm.brand.trim(),
       compatibility: editForm.compatibility.trim(), cost, price, minStock, idealStock,
       supplier: editForm.supplier.trim(), excludeFromRotation: editForm.excludeFromRotation,
@@ -166,6 +168,7 @@ export default function Estoque({ role, onNewProduct }: Props) {
           <button className="btn btn-ghost btn-sm" onClick={() => setEditProduct(null)}>✕</button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "13px" }}>
+          <label className="field-label">Código / SKU (código de barras)<input className="input" value={editForm.sku} onChange={e => setEditForm(f => ({ ...f, sku: e.target.value }))} placeholder="Digite ou leia o código de barras" />{editProduct.sku.startsWith("SC-") && <span style={{ fontSize: "11.5px", fontWeight: 400, color: "#64748B" }}>Este é um código automático. Troque pelo código de barras quando tiver.</span>}</label>
           <label className="field-label">Nome<input className="input" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "13px" }}>
             <label className="field-label">Categoria

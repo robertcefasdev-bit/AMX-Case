@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useProducts } from "../data/store";
 import type { Category } from "../data/mockData";
 
@@ -14,6 +14,9 @@ export default function CadastroProduto({ onBack }: Props) {
   });
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  // O código (SKU / código de barras) é opcional: só vale quando "Tem código" estiver ligado.
+  const [hasSku, setHasSku] = useState(false);
+  const skuRef = useRef<HTMLInputElement>(null);
 
   const cost = parseFloat(form.cost) || 0;
   const price = parseFloat(form.price) || 0;
@@ -24,8 +27,12 @@ export default function CadastroProduto({ onBack }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const sku = form.sku.trim();
-    if (products.some((p) => p.sku.toLowerCase() === sku.toLowerCase())) {
+    const sku = hasSku ? form.sku.trim() : "";
+    if (hasSku && !sku) {
+      window.alert("Digite o código do produto ou desligue a opção \"Tem código\".");
+      return;
+    }
+    if (sku && products.some((p) => p.sku.toLowerCase() === sku.toLowerCase())) {
       window.alert("Já existe um produto cadastrado com este SKU.");
       return;
     }
@@ -89,8 +96,28 @@ export default function CadastroProduto({ onBack }: Props) {
                 <input className="input" required value={form.name} onChange={e => set("name", e.target.value)} placeholder="Ex.: Capa iPhone 15 Transparente" />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, marginBottom: "5px", color: "#374151" }}>Código / SKU *</label>
-                <input className="input" required value={form.sku} onChange={e => set("sku", e.target.value)} placeholder="Ex.: CAP-IP15-001" />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
+                  <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#374151" }}>Código / SKU{hasSku ? " *" : ""}</label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, color: hasSku ? "#2563EB" : "#64748B", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={hasSku}
+                      onChange={e => { setHasSku(e.target.checked); if (e.target.checked) setTimeout(() => skuRef.current?.focus(), 0); }}
+                      style={{ width: "16px", height: "16px", accentColor: "#2563EB", cursor: "pointer" }}
+                    />
+                    Tem código
+                  </label>
+                </div>
+                <input
+                  ref={skuRef}
+                  className="input"
+                  required={hasSku}
+                  disabled={!hasSku}
+                  value={hasSku ? form.sku : ""}
+                  onChange={e => set("sku", e.target.value)}
+                  placeholder={hasSku ? "Digite ou leia o código de barras" : "Sem código — o sistema cria um automático"}
+                />
+                {!hasSku && <div style={{ fontSize: "11.5px", color: "#64748B", marginTop: "5px" }}>Você pode colocar o código depois, em Estoque → Editar.</div>}
               </div>
               <div>
                 <label style={{ display: "block", fontSize: "12.5px", fontWeight: 600, marginBottom: "5px", color: "#374151" }}>Categoria *</label>
