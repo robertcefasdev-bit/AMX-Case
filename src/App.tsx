@@ -15,10 +15,11 @@ import VendasVendedor from "./pages/VendasVendedor";
 import Financeiro from "./pages/Financeiro";
 import Caixa from "./pages/Caixa";
 import Relatorios from "./pages/Relatorios";
+import Promocoes from "./pages/Promocoes";
 import { DataProvider, useStore } from "./data/store";
 import { ThemeProvider } from "./context/ThemeContext";
 
-type Page = "dashboard" | "vendedor-dashboard" | "estoque" | "cadastro-produto" | "produtos-repor" | "pouca-rotatividade" | "registrar-venda" | "historico-vendas" | "vendedores" | "vendas-vendedor" | "financeiro" | "caixa" | "relatorios";
+type Page = "dashboard" | "vendedor-dashboard" | "estoque" | "cadastro-produto" | "produtos-repor" | "pouca-rotatividade" | "registrar-venda" | "historico-vendas" | "promocoes" | "vendedores" | "vendas-vendedor" | "financeiro" | "caixa" | "relatorios";
 
 function Splash({ text, action }: { text: string; action?: { label: string; onClick: () => void } }) {
   return (
@@ -57,6 +58,7 @@ function AppContent() {
       case "pouca-rotatividade": return role === "admin" ? <PoucaRotatividade /> : null;
       case "registrar-venda": return <RegistrarVenda userId={userId} role={role} />;
       case "historico-vendas": return <HistoricoVendas userId={userId} role={role} />;
+      case "promocoes": return role === "admin" ? <Promocoes /> : null;
       case "vendedores": return role === "admin" ? <Vendedores /> : null;
       case "vendas-vendedor": return role === "admin" ? <VendasVendedor /> : null;
       case "financeiro": return role === "admin" ? <Financeiro /> : null;

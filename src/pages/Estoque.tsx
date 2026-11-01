@@ -133,7 +133,7 @@ export default function Estoque({ role, onNewProduct }: Props) {
                 <td><span className="badge badge-blue">{p.category}</span></td>
                 <td style={{ fontSize: "12.5px", color: "#475569" }}>{p.compatibility}</td>
                 <td><span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: p.stock === 0 ? "#DC2626" : p.stock <= p.minStock ? "#CA8A04" : "#0F172A" }}>{p.stock}</span></td>
-                <td>{p.minStock}</td><td>{p.idealStock}</td>{role === "admin" && <td>{fmt(p.cost)}</td>}<td style={{ color: "#2563EB", fontWeight: 600 }}>{fmt(p.price)}</td>
+                <td>{p.minStock}</td><td>{p.idealStock}</td>{role === "admin" && <td>{fmt(p.cost)}</td>}<td style={{ color: "#2563EB", fontWeight: 600 }}>{p.promoPrice !== undefined ? <><span style={{ display: "block", fontSize: "11px", fontWeight: 400, color: "#94A3B8", textDecoration: "line-through" }}>{fmt(p.price)}</span><span style={{ color: "#16A34A" }}>{fmt(p.promoPrice)}</span> <span className="badge badge-green" style={{ fontSize: "10px" }}>Promo</span></> : fmt(p.price)}</td>
                 <td><span className={`badge ${sc}`}>{ss}</span></td><td><span className={`badge ${rc}`}>{rs}</span></td>
                 <td><div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
                   <button className="btn btn-ghost btn-sm" title="Detalhes" onClick={() => setSelected(p)}>Ver</button>

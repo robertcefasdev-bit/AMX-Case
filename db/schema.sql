@@ -99,3 +99,21 @@ create table if not exists amx_login_attempts (
 );
 
 create index if not exists amx_login_attempts_user_idx on amx_login_attempts (username, created_ts);
+
+create table if not exists amx_promotions (
+  id text primary key,
+  name text not null,
+  kind text not null check (kind in ('preco','percentual')),
+  value numeric(12,2) not null check (value > 0),
+  status text not null default 'Ativa' check (status in ('Ativa','Encerrada')),
+  ends_on text,
+  created_ts timestamptz not null default now()
+);
+
+create table if not exists amx_promotion_items (
+  promotion_id text not null references amx_promotions(id) on delete cascade,
+  product_id text not null references amx_products(id) on delete cascade,
+  primary key (promotion_id, product_id)
+);
+
+create index if not exists amx_promotion_items_product_idx on amx_promotion_items (product_id);

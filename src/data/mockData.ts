@@ -35,6 +35,9 @@ export interface Product {
   status: "Ativo" | "Inativo";
   /** Quando true, o produto não entra nas listas/alertas de baixa rotatividade. */
   excludeFromRotation?: boolean;
+  /** Preço promocional em vigor (vem do servidor); ausente quando o produto não está em promoção. */
+  promoPrice?: number;
+  promoName?: string;
 }
 
 export interface Sale {

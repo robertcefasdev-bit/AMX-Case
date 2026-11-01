@@ -23,6 +23,13 @@ export function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
 export interface AuthUser extends User { mustChangePassword: boolean }
 export interface Result { ok: boolean; message: string }
 export type NewProduct = Omit<Product, "id" | "totalBought" | "totalSold" | "daysSinceLastSale" | "status">;
+export interface Promotion {
+  id: string; name: string; kind: "preco" | "percentual"; value: number;
+  status: "Ativa" | "Encerrada"; endsOn: string; productIds: string[];
+  /** Ativa e dentro da validade (calculado no servidor). */
+  active: boolean;
+}
+export interface PromotionInput { id?: string; name: string; kind: "preco" | "percentual"; value: number; endsOn?: string; productIds: string[]; status?: "Ativa" | "Encerrada" }
 export interface NewUser { name: string; username: string; password: string; status: "Ativo" | "Inativo" }
 export interface UserPatch { name?: string; username?: string; password?: string; status?: "Ativo" | "Inativo" }
 
@@ -34,7 +41,7 @@ interface Store {
   dataStatus: "idle" | "loading" | "ready" | "error";
   dataError: string;
 
-  products: Product[]; sales: Sale[]; users: User[]; movements: StockMovement[];
+  products: Product[]; sales: Sale[]; users: User[]; movements: StockMovement[]; promotions: Promotion[];
   hasDiscountPassword: boolean;
 
   login: (username: string, password: string) => Promise<Result>;
@@ -57,10 +64,14 @@ interface Store {
   updateUser: (id: string, patch: UserPatch) => Promise<Result>;
   deleteUser: (id: string) => Promise<Result>;
   setDiscountOverridePassword: (password: string) => Promise<Result>;
+
+  savePromotion: (input: PromotionInput) => Promise<Result>;
+  setPromotionStatus: (id: string, status: "Ativa" | "Encerrada") => Promise<Result>;
+  deletePromotion: (id: string) => Promise<Result>;
 }
 
 interface Bootstrap {
-  products: Product[]; sales: Sale[]; users: User[]; movements: StockMovement[]; hasDiscountPassword: boolean;
+  products: Product[]; sales: Sale[]; users: User[]; movements: StockMovement[]; promotions: Promotion[]; hasDiscountPassword: boolean;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -75,10 +86,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [hasDiscountPassword, setHasDiscountPassword] = useState(false);
 
   const clearData = useCallback(() => {
-    setProducts([]); setSales([]); setUsers([]); setMovements([]); setHasDiscountPassword(false);
+    setProducts([]); setSales([]); setUsers([]); setMovements([]); setPromotions([]); setHasDiscountPassword(false);
     setDataStatus("idle"); setDataError("");
   }, []);
 
@@ -94,7 +106,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setDataStatus((s) => (s === "ready" ? s : "loading"));
     try {
       const d = await rpc<Bootstrap>("bootstrap");
-      setProducts(d.products); setSales(d.sales); setUsers(d.users); setMovements(d.movements);
+      setProducts(d.products); setSales(d.sales); setUsers(d.users); setMovements(d.movements); setPromotions(d.promotions || []);
       setHasDiscountPassword(d.hasDiscountPassword);
       setDataStatus("ready"); setDataError("");
     } catch (e) {
@@ -146,7 +158,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const value: Store = {
     status, currentUser, serverError, dataStatus, dataError,
-    products, sales, users, movements, hasDiscountPassword,
+    products, sales, users, movements, promotions, hasDiscountPassword,
     refresh,
 
     async login(username, password) {
@@ -200,6 +212,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     updateUser: (id, patch) => act("updateUser", { id, patch }),
     deleteUser: (id) => act("deleteUser", { id }),
     setDiscountOverridePassword: (password) => act("setDiscountPassword", { password }),
+
+    savePromotion: (input) => act("savePromotion", { ...input }),
+    setPromotionStatus: (id, status) => act("setPromotionStatus", { id, status }),
+    deletePromotion: (id) => act("deletePromotion", { id }),
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

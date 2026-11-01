@@ -54,10 +54,12 @@ export default function RegistrarVenda({ userId, role }: Props) {
 
   function removeItem(id: string) { setCart(cart.filter(c => c.product.id !== id)); }
 
-  const subtotal = cart.reduce((acc, c) => acc + c.product.price * c.qty, 0);
+  // Preço de venda atual: o promocional, quando o produto está em promoção.
+  const unit = (p: Product) => p.promoPrice ?? p.price;
+  const subtotal = cart.reduce((acc, c) => acc + unit(c.product) * c.qty, 0);
   const totalDiscount = subtotal * (discountPercent / 100);
   const total = subtotal - totalDiscount;
-  const totalProfit = cart.reduce((acc, c) => acc + (c.product.price - c.product.cost) * c.qty, 0) - totalDiscount;
+  const totalProfit = cart.reduce((acc, c) => acc + (unit(c.product) - c.product.cost) * c.qty, 0) - totalDiscount;
 
   async function confirm() {
     if (cart.length === 0 || submitting) return;
@@ -113,7 +115,7 @@ export default function RegistrarVenda({ userId, role }: Props) {
                           {p.stock === 0 ? "Sem estoque" : `${p.stock} disponíveis`}
                         </div>
                       </div>
-                      <div className="product-search-item-price">{fmt(p.price)}</div>
+                      <div className="product-search-item-price">{p.promoPrice !== undefined ? <><span style={{ display: "block", fontSize: "11px", fontWeight: 500, color: "#94A3B8", textDecoration: "line-through" }}>{fmt(p.price)}</span><span style={{ color: "#16A34A" }}>{fmt(p.promoPrice)}</span></> : fmt(p.price)}</div>
                     </button>
                   ))}
                 </div>
@@ -130,7 +132,7 @@ export default function RegistrarVenda({ userId, role }: Props) {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: "13.5px", fontWeight: 600, color: "#0F172A" }}>{item.product.name}</div>
-                      <div style={{ fontSize: "11.5px", color: "#64748B" }}>{fmt(item.product.price)} / un. · {item.product.stock} em estoque</div>
+                      <div style={{ fontSize: "11.5px", color: "#64748B" }}>{fmt(unit(item.product))} / un.{item.product.promoPrice !== undefined ? " (promoção)" : ""} · {item.product.stock} em estoque</div>
                     </div>
                     <button onClick={() => removeItem(item.product.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94A3B8", fontSize: "18px", lineHeight: 1 }}>×</button>
                   </div>
@@ -140,7 +142,7 @@ export default function RegistrarVenda({ userId, role }: Props) {
                       <input type="number" min="1" max={item.product.stock} value={item.qty} onChange={e => updateQty(item.product.id, parseInt(e.target.value) || 1)} className="input" style={{ width: "60px", padding: "5px 8px" }} />
                     </div>
                     <div style={{ marginLeft: "auto", textAlign: "right" }}>
-                      <div style={{ fontSize: "15px", fontWeight: 700, color: "#2563EB" }}>{fmt(item.product.price * item.qty)}</div>
+                      <div style={{ fontSize: "15px", fontWeight: 700, color: "#2563EB" }}>{fmt(unit(item.product) * item.qty)}</div>
                     </div>
                   </div>
                 </div>
@@ -177,7 +179,7 @@ export default function RegistrarVenda({ userId, role }: Props) {
                 {cart.map(item => (
                   <div key={item.product.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", marginBottom: "8px" }}>
                     <span style={{ color: "#475569" }}>{item.product.name} ×{item.qty}</span>
-                    <span style={{ fontWeight: 600 }}>{fmt(item.product.price * item.qty)}</span>
+                    <span style={{ fontWeight: 600 }}>{fmt(unit(item.product) * item.qty)}</span>
                   </div>
                 ))}
                 <div style={{ borderTop: "1px solid #E2E8F0", marginTop: "10px", paddingTop: "10px" }}>

@@ -83,7 +83,7 @@ export default function VendedorDashboard({ userId, onNavigate }: Props) {
                 <div style={{ fontSize: "11px", color: "#64748B" }}>{p.compatibility} · {p.sku}</div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: "#2563EB" }}>{fmt(p.price)}</div>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#2563EB" }}>{fmt(p.promoPrice ?? p.price)}</div>
                 <div style={{ fontSize: "11px", color: p.stock <= p.minStock ? "#DC2626" : "#64748B" }}>{p.stock} un.</div>
               </div>
             </div>

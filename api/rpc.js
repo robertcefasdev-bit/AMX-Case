@@ -209,6 +209,21 @@ const SCHEMA = [
     created_ts text not null
   )`,
   `create index if not exists amx_login_attempts_user_idx on amx_login_attempts (username, created_ts)`,
+  `create table if not exists amx_promotions (
+    id text primary key,
+    name text not null,
+    kind text not null check (kind in ('preco','percentual')),
+    value numeric(12,2) not null check (value > 0),
+    status text not null default 'Ativa' check (status in ('Ativa','Encerrada')),
+    ends_on text,
+    created_ts timestamptz not null default now()
+  )`,
+  `create table if not exists amx_promotion_items (
+    promotion_id text not null references amx_promotions(id) on delete cascade,
+    product_id text not null references amx_products(id) on delete cascade,
+    primary key (promotion_id, product_id)
+  )`,
+  `create index if not exists amx_promotion_items_product_idx on amx_promotion_items (product_id)`,
 ];
 
 // Marca em qual etapa um erro aconteceu (aparece na referência do erro, para diagnóstico).
@@ -227,7 +242,7 @@ function ensureSchema() {
     schemaReady = (async () => {
       const sql = db();
       // Só cria as tabelas se ainda não existirem (confere o último item criado).
-      const probe = await at("verificar", sql`select to_regclass('public.amx_login_attempts_user_idx')::text as t`);
+      const probe = await at("verificar", sql`select to_regclass('public.amx_promotion_items_product_idx')::text as t`);
       if (!probe[0] || !probe[0].t) {
         for (let i = 0; i < SCHEMA.length; i++) await at(`criar-${i + 1}`, sql.query(SCHEMA[i], []));
       }
@@ -367,7 +382,27 @@ const authUser = (u) => ({
 });
 const publicUser = (u) => ({ id: u.id, name: u.name, username: u.username, role: u.role, status: u.status, createdAt: u.created_at });
 
-function mapProduct(r, admin, today) {
+// Preço promocional: promoção de "preço" (valor fixo) ou "percentual" (desconto sobre o preço normal).
+function promoUnit(price, promo) {
+  if (!promo) return null;
+  const value = num(promo.value);
+  const unit = promo.kind === "preco" ? value : round2(price * (1 - value / 100));
+  return unit < price ? round2(unit) : null;
+}
+// Promoções em vigor hoje (ativas e dentro da validade), por produto.
+const ACTIVE_PROMO_SQL = (sql) => sql`select pi.product_id as product_id, pr.id as promo_id, pr.name as name, pr.kind as kind, pr.value as value, pr.ends_on as ends_on
+    from amx_promotion_items pi join amx_promotions pr on pr.id = pi.promotion_id where pr.status = ${"Ativa"}`;
+function promoMapFrom(rows, today) {
+  const m = new Map();
+  for (const r of rows) {
+    if (r.ends_on && r.ends_on < today) continue;
+    if (!m.has(r.product_id)) m.set(r.product_id, { id: r.promo_id, name: r.name, kind: r.kind, value: r.value });
+  }
+  return m;
+}
+
+function mapProduct(r, admin, today, promo) {
+  const promoPrice = promoUnit(num(r.price), promo);
   const base = r.last_sale || r.entry_date || "";
   return {
     id: r.id, sku: r.sku, name: r.name, category: r.category, brand: r.brand, compatibility: r.compatibility, description: r.description,
@@ -375,6 +410,7 @@ function mapProduct(r, admin, today) {
     supplier: admin ? r.supplier : "", entryDate: r.entry_date || "", lastEntry: r.last_entry || undefined, lastSale: r.last_sale || undefined,
     totalBought: num(r.total_bought), totalSold: num(r.total_sold), daysSinceLastSale: base ? daysBetween(base, today) : 0,
     status: r.status, excludeFromRotation: !!r.exclude_from_rotation,
+    promoPrice: promoPrice === null ? undefined : promoPrice, promoName: promoPrice === null ? undefined : promo.name,
   };
 }
 function mapSale(r, admin) {
@@ -452,29 +488,43 @@ async function actBootstrap(ctx) {
   const { sql, user } = ctx;
   const admin = user.role === "admin";
   const today = nowParts().iso;
-  let productRows, saleRows, userRows, moveRows, settingRows;
+  let productRows, saleRows, userRows, moveRows, settingRows, promoRows, promotionRows = [], itemRows = [];
   if (admin) {
-    [productRows, saleRows, userRows, moveRows, settingRows] = await sql.transaction([
+    [productRows, saleRows, userRows, moveRows, settingRows, promoRows, promotionRows, itemRows] = await sql.transaction([
       sql`select * from amx_products order by lower(name)`,
       sql`select * from amx_sales order by created_ts desc, id desc limit 5000`,
       sql`select * from amx_users order by created_ts, id`,
       sql`select * from amx_stock_movements order by created_ts desc, id desc limit 1000`,
       sql`select value from amx_settings where key = ${"discount_password_hash"}`,
+      ACTIVE_PROMO_SQL(sql),
+      sql`select * from amx_promotions order by created_ts desc, id desc`,
+      sql`select promotion_id, product_id from amx_promotion_items`,
     ]);
   } else {
-    [productRows, saleRows, userRows, settingRows] = await sql.transaction([
+    [productRows, saleRows, userRows, settingRows, promoRows] = await sql.transaction([
       sql`select * from amx_products where status = ${"Ativo"} order by lower(name)`,
       sql`select * from amx_sales where seller_id = ${user.id} order by created_ts desc, id desc limit 2000`,
       sql`select * from amx_users where id = ${user.id}`,
       sql`select value from amx_settings where key = ${"discount_password_hash"}`,
+      ACTIVE_PROMO_SQL(sql),
     ]);
     moveRows = [];
   }
+  const promos = promoMapFrom(promoRows, today);
+  const idsByPromo = new Map();
+  for (const it of itemRows) {
+    if (!idsByPromo.has(it.promotion_id)) idsByPromo.set(it.promotion_id, []);
+    idsByPromo.get(it.promotion_id).push(it.product_id);
+  }
   return {
-    products: productRows.map((r) => mapProduct(r, admin, today)),
+    products: productRows.map((r) => mapProduct(r, admin, today, promos.get(r.id))),
     sales: saleRows.map((r) => mapSale(r, admin)),
     users: userRows.map(publicUser),
     movements: moveRows.map(mapMovement),
+    promotions: promotionRows.map((r) => ({
+      id: r.id, name: r.name, kind: r.kind, value: num(r.value), status: r.status, endsOn: r.ends_on || "",
+      productIds: idsByPromo.get(r.id) || [], active: r.status === "Ativa" && (!r.ends_on || r.ends_on >= today),
+    })),
     hasDiscountPassword: settingRows.length > 0,
   };
 }
@@ -615,27 +665,29 @@ async function actRegisterSale(ctx, p) {
 
   const ids = [...wanted.keys()];
   const found = await sql.transaction(ids.map((pid) => sql`select * from amx_products where id = ${pid}`));
+  const promos = promoMapFrom(await ACTIVE_PROMO_SQL(sql), nowParts().iso);
   const items = ids.map((pid, i) => {
     const prod = found[i][0];
     if (!prod || prod.status !== "Ativo") throw fail(404, "NOT_FOUND", "Produto não encontrado.");
     const qty = wanted.get(pid);
     if (qty > num(prod.stock)) throw fail(409, "STOCK", `Estoque insuficiente para ${prod.name}. Disponível: ${num(prod.stock)}.`);
-    return { prod, qty };
+    const unit = promoUnit(num(prod.price), promos.get(prod.id)) ?? num(prod.price);
+    return { prod, qty, unit };
   });
 
-  const subtotal = items.reduce((s, it) => s + num(it.prod.price) * it.qty, 0);
+  const subtotal = items.reduce((s, it) => s + it.unit * it.qty, 0);
   const totalDiscount = subtotal * (discountPercent / 100);
   const now = nowParts();
   const createdTs = new Date().toISOString();
-  const saleRows = items.map(({ prod, qty }) => {
-    const original = num(prod.price) * qty;
+  const saleRows = items.map(({ prod, qty, unit }) => {
+    const original = unit * qty;
     const itemDiscount = subtotal ? totalDiscount * (original / subtotal) : 0;
     const final = original - itemDiscount;
     const cost = num(prod.cost) * qty;
     return {
       id: `v-${randomUUID()}`, sale_date: now.iso, sale_time: now.time, seller_id: seller.id, seller_name: seller.name,
       product_id: prod.id, product_name: prod.name, product_sku: prod.sku, category: prod.category, quantity: qty,
-      original_price: num(prod.price), discount: round2(itemDiscount), final_price: round2(final), cost: round2(cost),
+      original_price: unit, discount: round2(itemDiscount), final_price: round2(final), cost: round2(cost),
       profit: round2(final - cost), payment_method: paymentMethod, status: "Concluída",
     };
   });
@@ -791,6 +843,94 @@ async function actSetDiscountPassword(ctx, p) {
   return {};
 }
 
+// ───────────────────────── ações: promoções (admin) ─────────────────────────
+
+const brl = (n) => `R$ ${Number(n).toFixed(2).replace(".", ",")}`;
+
+// Confere as regras de uma promoção antes de gravar.
+async function checkPromotion(sql, { kind, value, productIds, status, selfId, today }) {
+  const prodRows = await sql`select id, name, price from amx_products`;
+  const byId = new Map(prodRows.map((r) => [r.id, r]));
+  for (const pid of productIds) {
+    const prod = byId.get(pid);
+    if (!prod) throw fail(404, "NOT_FOUND", "Um dos produtos escolhidos não existe mais. Atualize a tela.");
+    if (kind === "preco" && value >= num(prod.price)) {
+      throw bad(`O valor da promoção (${brl(value)}) deve ser menor que o preço normal de "${prod.name}" (${brl(num(prod.price))}).`);
+    }
+  }
+  if (status === "Ativa") {
+    // Um produto só pode estar em uma promoção ativa por vez.
+    const others = await sql`select pi.product_id as product_id, pr.name as name, pr.ends_on as ends_on
+        from amx_promotion_items pi join amx_promotions pr on pr.id = pi.promotion_id
+        where pr.status = ${"Ativa"} and pr.id <> ${selfId || ""}`;
+    const chosen = new Set(productIds);
+    for (const o of others) {
+      if (o.ends_on && o.ends_on < today) continue;
+      if (chosen.has(o.product_id)) {
+        throw fail(409, "DUPLICATE", `O produto "${byId.get(o.product_id).name}" já está na promoção ativa "${o.name}". Tire-o de lá ou encerre aquela promoção.`);
+      }
+    }
+  }
+}
+
+async function actSavePromotion(ctx, p) {
+  const { sql } = ctx;
+  const today = nowParts().iso;
+  const name = str(p.name, { min: 1, max: 80, field: "Nome da promoção" });
+  const kind = oneOf(p.kind, ["preco", "percentual"], "Tipo de promoção");
+  const value = money(p.value, "Valor da promoção");
+  if (value <= 0) throw bad("Informe o valor da promoção.");
+  if (kind === "percentual" && value >= 100) throw bad("O desconto deve ser menor que 100%.");
+  const endsOn = p.endsOn ? isoDate(p.endsOn, "Data final") : null;
+  if (endsOn && endsOn < today) throw bad("A data final não pode ser no passado.");
+  const status = p.status === undefined ? "Ativa" : oneOf(p.status, ["Ativa", "Encerrada"], "Status");
+  if (!Array.isArray(p.productIds) || p.productIds.length < 1 || p.productIds.length > 500) throw bad("Escolha pelo menos um produto.");
+  const productIds = [...new Set(p.productIds.map(idOf))];
+  const existingId = p.id ? idOf(p.id) : null;
+  if (existingId) {
+    const [cur] = await sql`select id from amx_promotions where id = ${existingId}`;
+    if (!cur) throw fail(404, "NOT_FOUND", "Promoção não encontrada.");
+  }
+  await checkPromotion(sql, { kind, value, productIds, status, selfId: existingId, today });
+
+  const id = existingId || `pr-${randomUUID()}`;
+  const queries = [];
+  if (existingId) {
+    queries.push(sql`update amx_promotions set name = ${name}, kind = ${kind}, value = ${value}, status = ${status}, ends_on = ${endsOn} where id = ${id}`);
+  } else {
+    queries.push(sql`insert into amx_promotions (id, name, kind, value, status, ends_on) values (${id}, ${name}, ${kind}, ${value}, ${status}, ${endsOn})`);
+  }
+  queries.push(sql`delete from amx_promotion_items where promotion_id = ${id}`);
+  for (const pid of productIds) {
+    queries.push(sql`insert into amx_promotion_items (promotion_id, product_id) values (${id}, ${pid})`);
+  }
+  await runTx(sql, queries);
+  return { id };
+}
+
+async function actSetPromotionStatus(ctx, p) {
+  const { sql } = ctx;
+  const today = nowParts().iso;
+  const id = idOf(p.id);
+  const status = oneOf(p.status, ["Ativa", "Encerrada"], "Status");
+  const [promo] = await sql`select * from amx_promotions where id = ${id}`;
+  if (!promo) throw fail(404, "NOT_FOUND", "Promoção não encontrada.");
+  if (status === "Ativa") {
+    if (promo.ends_on && promo.ends_on < today) throw bad("Esta promoção já passou da data final. Edite a data para ativá-la de novo.");
+    const items = await sql`select product_id from amx_promotion_items where promotion_id = ${id}`;
+    await checkPromotion(sql, { kind: promo.kind, value: num(promo.value), productIds: items.map((r) => r.product_id), status, selfId: id, today });
+  }
+  await runTx(sql, [sql`update amx_promotions set status = ${status} where id = ${id}`]);
+  return {};
+}
+
+async function actDeletePromotion(ctx, p) {
+  const { sql } = ctx;
+  const id = idOf(p.id);
+  await runTx(sql, [sql`delete from amx_promotions where id = ${id}`]);
+  return {};
+}
+
 // ───────────────────────── roteamento ─────────────────────────
 
 // auth: false = público | "any" = qualquer usuário logado | "admin" = só administrador
@@ -812,6 +952,9 @@ const ACTIONS = {
   updateUser: { auth: "admin", run: actUpdateUser },
   deleteUser: { auth: "admin", run: actDeleteUser },
   setDiscountPassword: { auth: "admin", run: actSetDiscountPassword },
+  savePromotion: { auth: "admin", run: actSavePromotion },
+  setPromotionStatus: { auth: "admin", run: actSetPromotionStatus },
+  deletePromotion: { auth: "admin", run: actDeletePromotion },
 };
 
 function send(res, status, body) {
